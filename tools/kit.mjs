@@ -30,6 +30,11 @@ const FILES = [
   'tools/sweep.mjs',
   'tools/shrink.mjs',
   'tools/shade.mjs',
+  /* Основание страницы: сброс, земля, режимы переноса, кольцо фокуса.
+     Оно оказалось непереносимым только по недосмотру: файл на 74 строки, ни
+     одного упоминания проекта — а правила переноса (`pretty` бегущему,
+     `balance` короткому) жили в нём и в новый проект не уезжали. */
+  'styles/base.css',
   'styles/tokens.css',
   'styles/primitives.module.css',
   'docs/rules.md',
@@ -128,6 +133,7 @@ https://github.com/IgorAIdev/MySkilforSiteBuilding» — он склонируе
 | \`.claude/skills/\` — остальное | вкус (\`taste-skill\`, \`emil-design-eng\`), движение (\`improve-animations\`), стиль (\`minimalist\`, \`brutalist\`, \`soft\`), придирчивый разбор (\`impeccable\`), \`redesign\`, \`brandkit\`, \`output\` — с лицензиями |
 | \`CLAUDE.md\` | те же правила словами — читаются раньше кода каждой сессией |
 | \`install.mjs\` | раскладывает набор в проект и дописывает скрипты |
+| \`styles/base.css\` | сброс, земля страницы, режимы переноса, кольцо фокуса |
 | \`styles/tokens.css\` | шкала размеров, шкала ритма, роли цвета, резервы под полосы |
 | \`styles/primitives.module.css\` | пять примитивов раскладки плюс общие контролы |
 | \`tools/check-css.mjs\` | храповик по файлам: размер, ритм, брейкпоинт, пропорция, пара цвета, ступени, движение |

@@ -1,0 +1,74 @@
+/* ===========================================================================
+   Base — the reset, the page ground, and the surfaces the browser draws
+   =========================================================================== */
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+html{scroll-behavior:smooth}
+
+body{
+  background:var(--page);
+  color:var(--sage-12);
+  font-size:var(--body-size, var(--fs-base)); line-height:var(--body-lead,1.45);
+  /* which face is set is an attribute on <html>, so the whole page swaps at
+     once and nothing has to know which component it is in */
+  font-family:var(--face);
+  -webkit-font-smoothing:antialiased;
+}
+
+/* Место под нижнюю полосу — из резерва, а не числом: см. --dock. */
+body{padding-bottom:var(--dock)}
+
+a{color:inherit;text-decoration:none;text-underline-offset:3px}
+img{max-width:100%;display:block}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+[hidden]{display:none !important}
+/* The headings' own face. It is var(--face) until somebody sets a second
+   one, so a site with one face has one face and nothing to switch. */
+/* Заголовок страницы — `pretty`, короткие заголовки — `balance`.
+   Замер на заголовке героя со склеенным термином «cannabis oil»:
+     618px  balance «…cannabis oil» / «capsules and» / «cannabis cream»
+     412px  balance то же
+     360px  balance «…cannabis oil» / «capsules» / «cannabis cream»  ← одно слово
+     360px  pretty  «…cannabis oil» / «capsules and» / «cannabis cream»
+   `balance` равняет ШИРИНЫ строк, и с неразрывным термином в 21 знак на
+   узком экране остаток делится криво. `pretty` правит хвост и даёт один и
+   тот же разрыв на всех трёх ширинах. */
+h1{text-wrap:pretty}
+h1,h2,h3{font-family:var(--face-head,var(--face))}
+h2,h3{text-wrap:balance}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:var(--sage-3);padding:1px 6px;border-radius:var(--r-xs)}
+/* Два режима переноса, и они про разное.
+
+   `pretty` — для бегущего текста: он правит ПОСЛЕДНЮЮ строку, не давая ей
+   остаться одним словом. Абзац в пять строк перекладывать целиком незачем.
+
+   `balance` — для короткого текста в две-три строки: подписи, пояснения под
+   заголовком, надписи кнопок. Он делит строки поровну — и на границе
+   предложения разрыв встаёт сам, потому что там она и есть.
+
+   Замер на подписи слайда, 1200px:
+     как было   «…Full and broad» / «spectrum.»        ← сирота
+     pretty     «…Full and» / «broad spectrum.»
+     balance    «A dropper, from 5% to 30%.» / «Full and broad spectrum.»
+
+   И главное: `balance` ищет разрыв ВНУТРИ того же числа строк. Если целое
+   предложение не переносится без третьей строки — он его и не переносит.
+   Проверено на удлинённом тексте: обе раскладки дали две строки. Правило
+   «перенеси предложение целиком, но только если не добавится строка»
+   выражено одним словом, а не расчётом. */
+p{text-wrap:pretty}
+small,figcaption,button,summary{text-wrap:balance}
+
+/* The browser's own surfaces — selection, caret, focus ring, scrollbar,
+   underline offset. By default they belong to no design system at all; here
+   they are painted from the palette. */
+::selection{background:var(--cyan-4);color:var(--cyan-12)}
+:focus-visible{outline:2px solid var(--cyan-9);outline-offset:3px}
+html{scrollbar-color:var(--sage-6) transparent;scrollbar-width:thin}
+input,textarea,select{caret-color:var(--cyan-11)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none !important;transition-duration:.01ms !important}
+}
