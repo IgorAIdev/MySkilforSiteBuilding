@@ -24,6 +24,15 @@ const BASELINE = join(ROOT, 'tools/css-baseline.json')
    нарушение. Панель настроек рисует саму себя и в магазин не едет. */
 const EXEMPT = ['styles/tokens.css', 'styles/studio.module.css']
 
+/* Предметы, которые тёмны замыслом и лежат НАД страницей, а не на её полу:
+   нижняя панель, всплывающее сообщение, кружок помощника. Им фирменная
+   заливка положена — белеть на палубе они не должны, они её закрывают. */
+const FLOATING = [
+  'components/TabBar.module.css',
+  'components/Toast.module.css',
+  'components/Helper.module.css',
+]
+
 /** Разрешённые точки: смена смысла раскладки, а не размера. */
 const BREAKPOINTS = [1080, 820, 560]
 
@@ -209,6 +218,29 @@ for (const path of files) {
     if (!ink) continue
     const head = css.slice(Math.max(0, css.lastIndexOf('}', open) + 1), open)
     add('halfRole', `${at(m.index)}  ${head.trim().slice(0, 40)} — фон литералом, краска токеном --${ink[1]}`)
+  }
+
+  /* Та же пара, сломанная с третьей стороны, и это тот же день и тот же
+     глаз заказчика: состояние контрола покрашено ФИРМЕННЫМ цветом.
+
+     `--accent-solid` — не только цвет кнопки, это ещё и цвет тёмного пола:
+     `--page-deck: var(--chrome-bg)`, а `--chrome-bg` и `--accent-solid` —
+     один и тот же `#0C3A46`. Пилюля героя на палубе под указателем красилась
+     В ЦВЕТ ПАЛУБЫ и исчезала целиком вместе со словом. Так же исчезла бы
+     любая основная кнопка, любой выбранный пункт, любая нажатая плитка,
+     попади они на палубу или на лист подвала.
+
+     Поэтому у состояния теперь своя роль — `--pop` / `--on-pop` /
+     `--pop-hover`, — и тёмный пол переопределяет её парой вместе с
+     `--surface`. Фирменный цвет остаётся только там, где предмет тёмен
+     ЗАМЫСЛОМ и лежит НАД страницей: нижняя панель, всплывающее сообщение,
+     кружок помощника. Они пол закрывают, а не стоят на нём. */
+  if (!FLOATING.includes(rel)) {
+    for (const m of css.matchAll(/background(?:-color)?\s*:\s*var\(--(accent-solid|hover-solid)\)/g)) {
+      const open = css.lastIndexOf('{', m.index)
+      const head = open < 0 ? '' : css.slice(Math.max(0, css.lastIndexOf('}', open) + 1), open)
+      add('halfRole', `${at(m.index)}  ${head.trim().slice(0, 40)} — состояние фирменным цветом (нужен --pop)`)
+    }
   }
 
   /* `@container` — не брейкпоинт. Контейнерный запрос меряет ширину своего

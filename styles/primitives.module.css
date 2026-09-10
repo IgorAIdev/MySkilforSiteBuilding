@@ -120,7 +120,7 @@
 .skip{
   position:absolute;left:50%;top:var(--sp-3);z-index:200;
   transform:translate(-50%, -200%);
-  background:var(--accent-solid);color:var(--on-accent);padding:var(--sp-3) var(--sp-5);border-radius:var(--r-pill);
+  background:var(--pop);color:var(--on-pop);padding:var(--sp-3) var(--sp-5);border-radius:var(--r-pill);
   font-size:var(--fs-sm);font-weight:600;transition:transform var(--hover-t) var(--ease);
 }
 .skip:focus-visible{transform:translate(-50%, 0)}
@@ -136,9 +136,9 @@
 .btn:active{transform:translateY(calc(-1 * var(--rise)))}
 .btn:active{transform:scale(.97)}
 .btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.btnPrimary{background:var(--accent-solid);color:var(--on-accent);box-shadow:var(--sh-accent)}
-@media (hover:hover){ .btnPrimary:hover{background:var(--hover-solid);box-shadow:var(--sh-accent-2)} }
-.btnPrimary:active{background:var(--hover-solid);box-shadow:var(--sh-accent-2)}
+.btnPrimary{background:var(--pop);color:var(--on-pop);box-shadow:var(--sh-accent)}
+@media (hover:hover){ .btnPrimary:hover{background:var(--pop-hover);box-shadow:var(--sh-accent-2)} }
+.btnPrimary:active{background:var(--pop-hover);box-shadow:var(--sh-accent-2)}
 .btnAmber{background:var(--amber-9);color:var(--amber-12);box-shadow:0 10px 24px -12px rgba(171,100,0,.5)}
 @media (hover:hover){ .btnAmber:hover{background:var(--amber-10)} }
 .btnAmber:active{background:var(--amber-10)}
@@ -219,7 +219,7 @@ select.input{
 }
 @media (hover:hover){ .seg button:hover{background:var(--hover-ctrl);color:var(--sage-12)} }
 .seg button:active{background:var(--hover-ctrl);color:var(--sage-12)}
-.seg button[aria-pressed="true"]{background:var(--accent-solid);color:var(--on-accent);font-weight:600}
+.seg button[aria-pressed="true"]{background:var(--pop);color:var(--on-pop);font-weight:600}
 
 /* ── sections ─────────────────────────────────────────────────────────── */
 /* Воздух между разделами — верхняя ступень шкалы, и течёт он вместе с ней:
