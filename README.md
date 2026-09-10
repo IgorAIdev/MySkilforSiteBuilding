@@ -27,7 +27,8 @@ https://github.com/IgorAIdev/MySkilforSiteBuilding» — он склонируе
 
 | | |
 |---|---|
-| `.claude/skills/craft/SKILL.md` | скилл: семь запретов, три шкалы, пять примитивов, четырнадцать проверок |
+| `.claude/skills/craft/` | свой скилл: семь запретов, три шкалы, пять примитивов, четырнадцать проверок |
+| `.claude/skills/` — остальное | вкус (`taste-skill`, `emil-design-eng`), движение (`improve-animations`), стиль (`minimalist`, `brutalist`, `soft`), придирчивый разбор (`impeccable`), `redesign`, `brandkit`, `output` — с лицензиями |
 | `CLAUDE.md` | те же правила словами — читаются раньше кода каждой сессией |
 | `install.mjs` | раскладывает набор в проект и дописывает скрипты |
 | `styles/tokens.css` | шкала размеров, шкала ритма, роли цвета, резервы под полосы |

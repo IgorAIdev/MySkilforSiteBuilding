@@ -15,7 +15,7 @@
  * настоящий и чинится своим темпом; там нечему копиться.
  */
 
-import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, cpSync, readdirSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 
 const ROOT = new URL('..', import.meta.url).pathname
@@ -24,7 +24,6 @@ const OUT = resolve(process.argv[2] ?? join(ROOT, 'kit'))
 /** Что переезжает. Список короткий намеренно: всё, что тут есть, должно
  *  работать на пустом проекте с первого дня. */
 const FILES = [
-  '.claude/skills/craft/SKILL.md',
   'tools/kit.mjs',
   'tools/check-css.mjs',
   'tools/check-craft.mjs',
@@ -44,6 +43,20 @@ const put = (rel) => {
 }
 
 for (const f of FILES) put(f)
+
+/* Скиллы едут ЦЕЛИКОМ, а не одним `craft`.
+ *
+ * Сначала ехал только свой: чужие лежат под своими лицензиями, и таскать
+ * их копией казалось неопрятным. Но неопрятность была моей проблемой, а у
+ * заказчика проблема другая — хороший сайт с первого дня. Новый проект,
+ * получивший правила вёрстки без скиллов о вкусе, движении и стиле, эти
+ * вопросы просто не задаст: их некому задать.
+ *
+ * Лицензии всех трёх источников (MIT, MIT, Apache 2.0) перенос разрешают
+ * при сохранении текста лицензии — он лежит рядом и едет вместе. */
+const SKILLS = join(ROOT, '.claude/skills')
+cpSync(SKILLS, join(OUT, '.claude/skills'), { recursive: true })
+const kits = readdirSync(SKILLS, { withFileTypes: true }).filter((e) => e.isDirectory()).length
 
 /* Правила и CI — не приложение к набору, а его суть.
  *
@@ -111,7 +124,8 @@ https://github.com/IgorAIdev/MySkilforSiteBuilding» — он склонируе
 
 | | |
 |---|---|
-| \`.claude/skills/craft/SKILL.md\` | скилл: семь запретов, три шкалы, пять примитивов, четырнадцать проверок |
+| \`.claude/skills/craft/\` | свой скилл: семь запретов, три шкалы, пять примитивов, четырнадцать проверок |
+| \`.claude/skills/\` — остальное | вкус (\`taste-skill\`, \`emil-design-eng\`), движение (\`improve-animations\`), стиль (\`minimalist\`, \`brutalist\`, \`soft\`), придирчивый разбор (\`impeccable\`), \`redesign\`, \`brandkit\`, \`output\` — с лицензиями |
 | \`CLAUDE.md\` | те же правила словами — читаются раньше кода каждой сессией |
 | \`install.mjs\` | раскладывает набор в проект и дописывает скрипты |
 | \`styles/tokens.css\` | шкала размеров, шкала ритма, роли цвета, резервы под полосы |
@@ -210,9 +224,10 @@ if (existsSync(pkgPath)) {
   wired = true
 }
 
-console.log(`Набор собран: ${FILES.length + 6} файлов в ${OUT}`)
+console.log(`Набор собран: ${FILES.length + 6} файлов и ${kits} скиллов в ${OUT}`)
 console.log('  · CLAUDE.md — правила, читаются раньше кода каждой сессией')
 console.log('  · install.mjs — ставит набор в проект одной командой')
+console.log('  · .claude/skills — все скиллы: свой craft плюс вкус, движение, стиль')
 if (spare) console.log('  · заготовок tools/kit/ нет — правила взяты из корневого CLAUDE.md')
 console.log('  · .github/workflows/check.yml — проверки падают сами, без чьей-либо памяти')
 console.log('  · базы храповиков обнулены — на новом проекте долга нет')
