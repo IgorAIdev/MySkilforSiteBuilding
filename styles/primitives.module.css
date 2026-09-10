@@ -204,6 +204,10 @@ select.input{
   font-size:var(--qty-fs,16px);font-weight:600;font-variant-numeric:tabular-nums;color:var(--sage-12);
 }
 .qty input{width:calc(var(--qty-h,54px) * .74)}
+/* Пальцем поле набирают так же, как жмут кнопку: 44 по узкой стороне. На
+   узком экране счётчик мельче, и доля от его высоты давала 40 — меньше
+   пальца. Ширина растёт, высота у счётчика своя и уже достаточна. */
+@media (pointer:coarse){ .qty input{min-width:44px} }
 .qty b{display:grid;place-items:center;min-width:calc(var(--qty-h,54px) * .7)}
 
 /* ── a segmented control ──────────────────────────────────────────────── */

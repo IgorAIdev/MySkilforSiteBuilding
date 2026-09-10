@@ -45,16 +45,39 @@ function walk(dir) {
   }
 }
 
-const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], motion: [] }
+const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], halfRole: [], motion: [] }
+
+/* Комментарий — не код. Объяснение, ПОЧЕМУ брейкпоинт убран, само считалось
+   брейкпоинтом; абзац про `padding-block: var(--sp-9)` — отступом. Режется с
+   сохранением длины, пробел на символ: номера строк считаются по смещению.
+
+   Пробела на символ мало: перенос строки внутри комментария тоже становился
+   пробелом, комментарий схлопывался в одну строку, и ВСЕ номера ниже него
+   уезжали вверх. Сохраняются и длина, и переносы.
+
+   Второй проход резал комментарии, а первый — нет, и правка легла мимо.
+   Признак тот же, что всегда: адрес не сходится с тем, что видно глазом. */
+const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
 
 for (const path of files) {
   const rel = relative(ROOT, path)
   if (EXEMPT.includes(rel)) continue
-  const css = readFileSync(path, 'utf8')
+  const css = strip(readFileSync(path, 'utf8'))
   const at = (index) => `${rel}:${css.slice(0, index).split('\n').length}`
 
+  /* Одно объявление — одна находка. `padding:20px 26px 8px` — это три числа,
+     но ОДНО место, которое чинится одной правкой. Считая числа, проверка
+     показывала 60 там, где мест было втрое меньше, и долг выглядел страшнее,
+     чем есть. Долг мерится работой, а не арифметикой. */
+  const seen = new Set()
+  const add = (fam, line) => {
+    if (seen.has(fam + line)) return
+    seen.add(fam + line)
+    found[fam].push(line)
+  }
+
   for (const m of css.matchAll(/font-size:\s*([\d.]+)px/g)) {
-    found.fontPx.push(`${at(m.index)}  font-size:${m[1]}px`)
+    add('fontPx', `${at(m.index)}  font-size:${m[1]}px`)
   }
 
   /* Ритм и геометрия — разные вещи, и правило 2 про первое.
@@ -86,24 +109,60 @@ for (const path of files) {
    * `--grid-gap:14px` иначе находится `gap:14px`, и шкала, ради которой
    * всё затевалось, считалась бы нарушением правила о шкале. */
   const OWN_SIZE = /(?:^|[;{])\s*(?:min-|max-)?(?:height|width|block-size|inline-size)\s*:\s*\d+(?:\.\d+)?px/
+  /* Пилюля — контрол и тогда, когда высоты у неё в файле нет: высоту ей
+     ДАЁТ подкладка вместе со строкой текста. Признак собственного размера
+     её не ловил, и `padding:9px 13px` у ссылки в меню считался ритмом —
+     а это её устройство, то самое, где доля растёт вместе с высотой.
+     Скруглением в половину высоты ничто, кроме контрола, не бывает. */
+  const IS_PILL = /border-radius\s*:\s*var\(--r-pill\)/
   for (const m of css.matchAll(/(?<![-a-z])(padding|margin|gap|inset)[a-z-]*:\s*([^;}]+)/g)) {
     /* блок, внутри которого стоит объявление */
     const open = css.lastIndexOf('{', m.index)
     const close = css.indexOf('}', m.index)
     const block = open >= 0 && close > open ? css.slice(open, close) : ''
-    const geometry = m[1] !== 'margin' && OWN_SIZE.test(block)
+    const geometry = m[1] !== 'margin' && (OWN_SIZE.test(block) || IS_PILL.test(block))
     if (geometry) continue
     /* Запасное значение переменной — не выбор отступа: в
        `padding:calc(var(--qty-h,54px) * .074)` число 54 это высота контрола,
        объявленная где-то ещё, а здесь лишь названная на случай, если её не
        назначили. Считать его нарушением значит требовать шкалу от того, что
        шкалой не является. */
+    /* `clamp(var(--sp-8), 4.62vw - 9.85px, var(--sp-9))` — это ступень
+       между двумя ступенями, текущая с шириной: ровно то, чего правило и
+       требует. Число внутри — наклон прямой, а не отступ. Признак: в
+       значении есть и `vw`, и шкала. */
+    if (/vw/.test(m[2]) && /var\(--sp-/.test(m[2])) continue
     const bare = m[2].replace(/var\([^()]*\)/g, '')
     for (const px of bare.matchAll(/(\d+(?:\.\d+)?)px/g)) {
       if (Number(px[1]) >= SPACING_FLOOR) {
-        found.spacingPx.push(`${at(m.index)}  ${m[0].trim().slice(0, 48)}`)
+        add('spacingPx', `${at(m.index)}  ${m[0].trim().slice(0, 48)}`)
       }
     }
+  }
+
+  /* Роль переопределяется ПАРОЙ.
+
+     Тёмная палуба переопределяла только цвет знака (`--sage-12` → белый), а
+     `--surface` оставался белым листом: пилюли героя вышли белым по белому,
+     слов не видно вовсе. Заказчик нашёл это глазом на витрине.
+
+     Сломалась бы любая плашка внутри палубы, а не только пилюли: знак и то,
+     на чём он стоит, — одна пара, и переопределять её половиной нельзя.
+     Проверка смотрит ровно это: блок, назначающий цвет знака, обязан в том
+     же блоке назначить и поверхность. `:root` не в счёт — там объявлено всё.
+
+     Отрисованной проверкой это не ловится: она открывает витрину в одном
+     состоянии настроек, а палуба — одно из многих. Признак виден в файле,
+     значит место ему здесь. */
+  for (const m of css.matchAll(/(?:^|[;{])\s*--sage-1[12]\s*:/g)) {
+    const open = css.lastIndexOf('{', m.index)
+    const close = css.indexOf('}', m.index)
+    if (open < 0 || close < open) continue
+    const head = css.slice(Math.max(0, css.lastIndexOf('}', open) + 1), open)
+    if (/:root/.test(head)) continue
+    const block = css.slice(open, close)
+    if (/--surface\s*:/.test(block)) continue
+    add('halfRole', `${at(m.index)}  ${head.trim().slice(0, 44)} — знак переопределён, поверхность нет`)
   }
 
   /* `@container` — не брейкпоинт. Контейнерный запрос меряет ширину своего
@@ -121,7 +180,7 @@ for (const path of files) {
     /* Ниже 200px — не про раскладку страницы: так меряют собственную ширину
        контейнера в @container. */
     if (w >= 200 && !BREAKPOINTS.includes(w) && !BREAKPOINTS.includes(w - 1)) {
-      found.breakpoint.push(`${at(m.index)}  ${m[0]}`)
+      add('breakpoint', `${at(m.index)}  ${m[0]}`)
     }
   }
 
@@ -158,7 +217,7 @@ for (const path of files) {
     ).test(css)
 
     if (!byHeight && !capped && !/max-block-size|max-height/.test(block)) {
-      found.ratioNoCap.push(`${at(m.index)}  aspect-ratio без потолка`)
+      add('ratioNoCap', `${at(m.index)}  aspect-ratio без потолка`)
     }
   }
 }
@@ -192,8 +251,7 @@ for (const file of files) {
      Заведено потому, что проверка читала СОБСТВЕННЫЙ комментарий: строка
      «Стояло `@media (min-width:1241px)`», объясняющая, почему брейкпоинта
      больше нет, считалась брейкпоинтом. */
-  const css = readFileSync(file, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+  const css = strip(readFileSync(file, 'utf8'))
   const rel = relative(ROOT, file)
   if (EXEMPT.includes(rel)) continue
   const at = (i) => `${rel}:${css.slice(0, i).split('\n').length}`
@@ -248,7 +306,22 @@ const NAMES = {
   spacingPx: 'отступ в px (правило 2: ритм из шкалы --sp-*)',
   breakpoint: `брейкпоинт вне ${BREAKPOINTS.join('/')} (правило 3)`,
   ratioNoCap: 'aspect-ratio без max-block-size (правило 4)',
+  halfRole: 'роль переопределена наполовину: знак сменили, поверхность нет',
   motion: 'движение: двигает раскладку, дольше 500ms или ease-in',
+}
+
+/* `--list [семья]` печатает сами находки. Без него долг видно числом, но
+   не видно местом: 60 отступов — это не адрес, а настроение. Платить долг
+   вслепую нельзя, а прошлые сессии именно этим и занимались. */
+const li = process.argv.indexOf('--list')
+if (li !== -1) {
+  const pick = process.argv[li + 1]
+  const fams = found[pick] ? [pick] : Object.keys(NAMES)
+  for (const k of fams) {
+    console.log(`\n${NAMES[k]} — ${found[k].length}`)
+    for (const line of found[k]) console.log(`    ${line}`)
+  }
+  process.exit(0)
 }
 
 let failed = false
