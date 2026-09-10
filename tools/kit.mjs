@@ -92,11 +92,11 @@ writeFileSync(join(OUT, 'README.md'), `# Набор вёрстки
 Из папки проекта, одной строкой:
 
 \`\`\`
-git clone --depth 1 https://github.com/IgorAIdev/MySkil_for_Site_Building.git /tmp/kit && node /tmp/kit/install.mjs . && rm -rf /tmp/kit
+git clone --depth 1 https://github.com/IgorAIdev/MySkilforSiteBuilding.git /tmp/kit && node /tmp/kit/install.mjs . && rm -rf /tmp/kit
 \`\`\`
 
 Агенту достаточно сказать словами: «установи набор из
-https://github.com/IgorAIdev/MySkil_for_Site_Building» — он склонирует и
+https://github.com/IgorAIdev/MySkilforSiteBuilding» — он склонирует и
 разложит сам. Помнить надо адрес, а не команду.
 
 **Клонировать этот репозиторий как папку нового сайта нельзя.**
