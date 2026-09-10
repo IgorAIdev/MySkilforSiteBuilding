@@ -65,7 +65,12 @@ const pairOf = (a, b) => {
 
 const BASE = process.env.SITE ?? 'http://localhost:8099'
 const PAGES = ['/', '/catalog', '/product', '/cart', '/checkout']
-const WIDTHS = [390, 700, 1024, 1440]
+/* 1200 и 900 добавлены не для полноты. Ровно в этой полосе двухколоночный
+   герой держит колонку шириной с телефон при десктопном окне: заголовок в ней
+   вставал четырьмя строками по четырнадцать знаков, а подпись кадра — по
+   одному слову. Ни 1024, ни 1440 этого не показывали. Дефект живёт там, где
+   не смотрели. */
+const WIDTHS = [390, 700, 900, 1024, 1200, 1440]
 const PHONE = 700          // ниже этой ширины цель нажатия меряется пальцем
 const BASELINE = new URL('./craft-baseline.json', import.meta.url).pathname
 const ROOT = new URL('..', import.meta.url).pathname
@@ -201,16 +206,57 @@ const measure = (phone) => {
      Раньше здесь стоял один порог на обоих, и он ругался на правильно
      ограниченные абзацы подвала — то есть требовал убрать меру там, где она
      нужна. */
-  for (const el of document.querySelectorAll('h1, h2, h3, p, blockquote')) {
+  /* Столбиком рассыпается ЛЮБОЙ текст, не только заголовок: подпись кнопки,
+     ссылка в списке, мелкая строка под плиткой. Мера набора (45…75 знаков) —
+     про бегущий текст, поэтому её спрашивают с абзацев; столбик обрывков —
+     про всех. */
+  for (const el of document.querySelectorAll('h1, h2, h3, h4, p, blockquote, li, small, button, a, figcaption')) {
     if (!shown(el) || !el.textContent.trim()) continue
     const cs = getComputedStyle(el)
     const box = el.getBoundingClientRect()
+    /* Строки считаются по прямоугольникам диапазона, а не по высоте коробки.
+       Высота коробки включает подкладку: у кнопки с полем 12px «Drops»
+       выходило четыре строки по пять знаков, и мера ругалась на текст,
+       который стоит одной строкой. Диапазон отдаёт по прямоугольнику на
+       КАЖДУЮ строку — это и есть строки. */
     const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2
-    const lines = Math.round(box.height / lh)
+    /* Дёшево — потом точно. Высота коробки включает подкладку: у кнопки с
+       полем 12px «Drops» выходило четыре строки по пять знаков, и проверка
+       ругалась на текст, стоящий одной строкой. Поэтому высота — только
+       грубый отсев, а строки считаются обходом по знакам: он даёт и их
+       число, и длину каждой В ЗНАКАХ, а не в пикселях. Прикидка «полкегля
+       на знак» тоже врала: у жирного наборного знак шире. */
+    if (box.height / lh < 1.6) continue
+    const rows = []
+    {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      let node, chars = 0
+      const r = document.createRange()
+      let last = null, row = ''
+      while ((node = walk.nextNode()) && chars < 400) {
+        for (let i = 0; i < node.length; i++, chars++) {
+          r.setStart(node, i); r.setEnd(node, i + 1)
+          const rect = r.getBoundingClientRect()
+          if (!rect.width && !rect.height) continue
+          const top = Math.round(rect.top)
+          if (last !== null && top !== last) { rows.push(row); row = '' }
+          last = top; row += node.data[i]
+        }
+      }
+      rows.push(row)
+    }
+    const lines = rows.filter((x) => x.trim()).length
     if (lines < 2) continue                     // одна строка меры не имеет
-    const head = /^H[1-3]$/.test(el.tagName)
+    const head = /^H[1-4]$/.test(el.tagName)
 
     if (head) {
+      /* Заголовок, вставший СТОЛБИКОМ, — дефект, даже когда занимает колонку
+         целиком. Долю колонки он в этом случае проходит (сто процентов!), а
+         читается как список обрывков: «CBD / oil and / cannabis / oil».
+         Причина всегда одна — размер взят от окна, а стоит текст в узкой
+         коробке. Меряется САМАЯ ДЛИННАЯ строка, а не средняя: у среднего
+         короткий хвост тянет вниз здоровый заголовок. */
+
       const host = el.parentElement
       if (!host) continue
       const hostW = host.getBoundingClientRect().width
@@ -596,11 +642,20 @@ for (const path of PAGES) {
     delete r.dark
 
     for (const k of Object.keys(r)) {
-      for (const line of r[k]) found[k].push(`${path} @${w}  ${line}`)
+      for (const line of r[k]) {
+        /* Заглушка — про НАПОЛНЕНИЕ, а не про ширину: `[NAME]` под отзывом
+           один и тот же на всех шести ширинах, и это одно место, а не шесть
+           дефектов. Считать её на каждой ширине значит мерить не то — та же
+           ошибка, что и «одно объявление столько раз, сколько в нём чисел».
+           Остальные семьи от ширины зависят, и там повтор законен. */
+        found[k].push(k === 'placeholder' ? `${path}  ${line}` : `${path} @${w}  ${line}`)
+      }
     }
   }
 }
 await browser.close()
+
+found.placeholder = [...new Set(found.placeholder)]
 
 const counts = Object.fromEntries(Object.entries(found).map(([k, v]) => [k, v.length]))
 
