@@ -50,25 +50,80 @@ for (let w = FROM; w <= TO; w += STEP) {
      метрики, и до их загрузки высота — чужая. */
   await page.evaluate(() => document.fonts.ready)
 
-  const m = await page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    inner: window.innerWidth,
-    height: document.body.scrollHeight,
-    /* Высоты крупных блоков — чтобы скачок можно было назвать по имени, а не
-       только заметить по сумме. */
-    blocks: [...document.querySelectorAll('main > *')]
-      .map((el) => Math.round(el.getBoundingClientRect().height)),
-  }))
+  const m = await page.evaluate(() => {
+    /* Набор ломается ПОЛОСОЙ ширин, а не точкой.
+     *
+     * Подпись кадра рассыпалась на «CBD / oil and / cannabis / oil» в полосе
+     * примерно 840…880: там кадр уже узкий, а раскладка ещё двухколоночная.
+     * Отрисованная проверка смотрит шесть ширин — и эту полосу проскочила
+     * целиком. Свип идёт шагом в 40px от 320 до 1600, то есть по полосам, и
+     * место такой проверке здесь.
+     *
+     * Правила те же, что в `check:craft`: столбик обрывков и сирота, и та же
+     * оговорка — короткая строка в узкой коробке не вина текста. */
+    const bad = []
+    const nodes = document.querySelectorAll('h1,h2,h3,h4,p,li,small,button,a,blockquote,figcaption')
+    for (const el of nodes) {
+      const cs = getComputedStyle(el)
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue
+      if (!el.textContent.trim()) continue
+      if ([...el.children].some((ch) => {
+        const d = getComputedStyle(ch).display
+        return d !== 'inline' && d !== 'contents' && d !== 'none'
+      })) continue
+      const box = el.getBoundingClientRect()
+      if (box.width < 4 || box.top > innerHeight * 4) continue
+      const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2
+      if (box.height / lh < 1.6) continue
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      const r = document.createRange()
+      const rows = []
+      let node, chars = 0, last = null, row = ''
+      while ((node = walk.nextNode()) && chars < 300) {
+        for (let i = 0; i < node.length; i++, chars++) {
+          r.setStart(node, i); r.setEnd(node, i + 1)
+          const rect = r.getBoundingClientRect()
+          if (!rect.width && !rect.height) continue
+          const top = Math.round(rect.top)
+          if (last !== null && top !== last) { rows.push(row); row = '' }
+          last = top; row += node.data[i]
+        }
+      }
+      rows.push(row)
+      const len = rows.map((x) => x.trim().length).filter(Boolean)
+      if (len.length < 2) continue
+      const widest = Math.max(...len)
+      const roomy = box.width >= 320 || parseFloat(cs.fontSize) >= 20
+      if (!roomy) continue
+      const label = `${el.tagName.toLowerCase()} «${el.textContent.trim().slice(0, 24)}»`
+      if (len.length >= 3 && widest < 20) bad.push(`${label} — ${len.length} строки по ≤${widest}: столбик`)
+      const tail = rows[rows.length - 1].trim()
+      if (tail && !tail.includes(' ') && tail.length < 12 && tail.length < widest * 0.3) {
+        bad.push(`${label} — последняя строка «${tail}»: сирота`)
+      }
+    }
+    return {
+      scroll: document.documentElement.scrollWidth,
+      inner: window.innerWidth,
+      height: document.body.scrollHeight,
+      bad,
+      /* Высоты крупных блоков — чтобы скачок можно было назвать по имени, а не
+         только заметить по сумме. */
+      blocks: [...document.querySelectorAll('main > *')]
+        .map((el) => Math.round(el.getBoundingClientRect().height)),
+    }
+  })
 
   await page.screenshot({
     path: `${out}/${String(w).padStart(4, '0')}.png`,
     fullPage: !fold,
   })
-  rows.push({ w, over: m.scroll - m.inner, height: m.height, blocks: m.blocks })
+  rows.push({ w, over: m.scroll - m.inner, height: m.height, blocks: m.blocks, bad: m.bad })
 }
 
 await browser.close()
 
+let bandsFailed = false
 const overflow = rows.filter((r) => r.over > 1)
 const jumps = []
 for (let i = 1; i < rows.length; i++) {
@@ -93,6 +148,26 @@ if (overflow.length) {
   console.log('✓ Горизонтального переполнения нет ни на одной ширине')
 }
 
+/* Набор по полосам. Одно и то же место ломается на нескольких соседних
+   ширинах — печатается один раз с полосой, а не тридцать раз подряд. */
+const bands = new Map()
+for (const r of rows) {
+  for (const b of r.bad ?? []) {
+    if (!bands.has(b)) bands.set(b, [])
+    bands.get(b).push(r.w)
+  }
+}
+if (bands.size) {
+  console.log(`\n✗ Набор ломается на полосе ширин (${bands.size}):`)
+  for (const [what, ws] of bands) {
+    console.log(`    ${what}`)
+    console.log(`      ${ws[0]}…${ws[ws.length - 1]}px (${ws.length} шир.)`)
+  }
+  bandsFailed = true
+} else {
+  console.log('✓ Столбиков и сирот нет ни на одной ширине')
+}
+
 if (jumps.length) {
   console.log('\n· Скачки высоты (смотреть, не обязательно чинить):')
   for (const j of jumps) {
@@ -111,4 +186,4 @@ if (jumps.length) {
 console.log()
 /* Переполнение — дефект всегда: страницу можно утащить вбок. Скачок высоты
    дефектом быть не обязан, поэтому он не валит проверку, а сообщается. */
-if (overflow.length) process.exitCode = 1
+if (overflow.length || bandsFailed) process.exitCode = 1
