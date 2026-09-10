@@ -1,0 +1,408 @@
+/* ===========================================================================
+   The soft system — tokens
+   Anything that is a container floats on the page with round corners and a
+   soft tinted shadow; anything you press is a pill. There are no rules
+   anywhere: groups are separated by space and ground, never by a line.
+
+     pill   buttons, chips, search, counters, segments, badges, the header row
+     28     sheets: newsletter, drawer, footer
+     24     cards, panels, mega menu
+     18     inside a card — the concentric radius (24 − 6 of padding)
+     14     fields, thumbnails, rows in a list
+     10     small things: kbd, code, the smallest thumbnails
+
+   Every colour is written once, as light-dark(). The theme is then a single
+   `color-scheme` switch rather than a second copy of the palette that drifts
+   from the first. No attribute means the operating system decides.
+   =========================================================================== */
+
+:root{
+  color-scheme: light dark;
+
+  /* Radix sage / cyan / amber. The dark side is not the light side inverted:
+     on a dark ground the greens have to lose saturation to stop vibrating,
+     and the accents have to gain lightness to stay legible. */
+  --sage-1:  light-dark(#FBFDFC, #0E1412);
+  --sage-2:  light-dark(#F5F8F6, #131A17);
+  --sage-3:  light-dark(#ECF0EE, #1A221E);
+  --sage-4:  light-dark(#E2E7E4, #212B26);
+  --sage-5:  light-dark(#D8DED9, #29342E);
+  --sage-6:  light-dark(#CBD3CE, #333F39);
+  --sage-8:  light-dark(#8E9994, #5C6A64);
+  --sage-11: light-dark(#5C6662, #A4B0AA);
+  --sage-12: light-dark(#182220, #E7EEEA);
+
+  /* cyan-12 had two jobs and could only flip one way. As a deep surface it
+     must stay dark in both themes; as a text colour on a light ground it must
+     go light when the ground does. So it is two tokens now, and the pair that
+     always travels together — a solid and the ink that sits on it — is named
+     as a pair. */
+  --accent-solid: light-dark(#0C3A46, #12313A);
+  --on-accent:    light-dark(#FFFFFF, #E7EEEA);
+  /* cyan-11 не цвет, а «акцент на той светлоте, на которой слово читается».
+     Написанное так, оно не может отстать от смены акцента: берём его тон,
+     светлоту и насыщенность задаём здесь. На Sage это повторяет Radix почти
+     в точности (#146E84 против #0F6C82), на любом другом тоне даёт ссылку
+     5.7–6.3:1 на белом. Насыщенность фиксирована, а не множитель: тёмный
+     акцент обесцвечен нарочно, и умножать было бы нечего. */
+  --cyan-12: light-dark(var(--accent-solid), oklch(from var(--accent-solid) 0.90 0.06 h));
+  --cyan-11: light-dark(oklch(from var(--accent-solid) 0.50 0.085 h),
+                        oklch(from var(--accent-solid) 0.80 0.11 h));
+  --cyan-9:  oklch(from var(--accent-solid) 0.66 0.12 h);
+  --cyan-4:  light-dark(oklch(from var(--accent-solid) 0.92 0.045 h),
+                        oklch(from var(--accent-solid) 0.32 0.045 h));
+  --cyan-3:  light-dark(oklch(from var(--accent-solid) 0.96 0.025 h),
+                        oklch(from var(--accent-solid) 0.27 0.04 h));
+
+  --amber-9:  light-dark(#FFC53D, #FFC53D);
+  --amber-10: light-dark(#F5B71F, #FFD25E);
+  --amber-3:  light-dark(#FFF3D0, #2E2410);
+  --amber-11: light-dark(#AB6400, #FFCA48);
+  --amber-12: light-dark(#4F3422, #4F3422);
+
+  /* surfaces: page, card, tile inside a card, tonal control.
+     The page ground sits a step below sage-2. At sage-2 a white panel — the
+     mega menu, a card, the drawer — was separated from the ground by about
+     two per cent of lightness, which reads as an edge only where a shadow
+     falls; the panel itself looked like a patch of the page. */
+  /* Подложка страницы и лист поверх неё стояли в 1.026 : 1 — разницы в семь
+     единиц по красному и две по зелёному; границы блока на телефоне при
+     дневном свете просто не было. Светлить лист было некуда: даже чистый
+     белый даёт против прежней подложки только 1.119, поэтому уступает
+     подложка. Разошлись до 1.160 в светлой теме и 1.185 в тёмной — там
+     наоборот, подниматься приходится листу, потому что подложке уже некуда
+     темнеть. */
+  --page:    light-dark(#E0E6E3, #0E1412);
+  --surface: light-dark(#FFFFFF, #171F1B);
+
+  /* Полоса под блоком — три ступени, а не десять. Страница была одной серой
+     плоскостью на семь тысяч пикселей: белые карточки на ней плыли, но сам
+     свиток читался как один бесконечный экран без начала разделов и без
+     конца. Ступеней ровно столько, чтобы разница читалась как смена
+     раздела, а не как случайный цвет:
+
+       page   основная — то, на чём страница стоит по умолчанию
+       paper  на полтона теплее и светлее: тот же лист, поднесённый ближе.
+              Им отбиваются места, где не смотрят, а выбирают
+       deck   тёмная палуба шапки и подвала. Это точка, а не полоса:
+              на странице она одна, иначе перестаёт быть точкой */
+  --page-paper: light-dark(#F6F5F1, #1C2521);
+  --page-deck:  var(--chrome-bg);
+  --page-deck-fg: var(--chrome-fg);
+  --tile:    light-dark(#F5F8F6, #1A221E);
+  --ctrl:    light-dark(#ECF0EE, #212B26);
+  /* Поле, в котором стоят карточки, когда стоят они не на странице, а внутри
+     белого листа: карточка не должна стоять на собственном цвете — краёв
+     тогда не видно вовсе. Двигается ручкой «Well» в разделе цвета. */
+  --field:   light-dark(#F1F5F3, #141B18);
+  /* Лист выпадающего меню. Белый — не единственный ответ: панель шириной в
+     тысячу пикселей, упавшая на страницу, белым светит сильнее, чем ей
+     положено. Тёплый почти-белый в светлой теме, приподнятый над страницей
+     в тёмной. */
+  --menu-bg: light-dark(#FBFCFB, #1B2420);
+
+  /* the header row: its colours are tokens so light or dark stays a choice.
+     On a dark page the row lifts away from the ground instead of sinking
+     into it — otherwise the header simply disappears. */
+  /* Только две из них задаются: цвет строки и чернила на ней (их пишет
+     панель — «авто» считает, что читается на выбранном цвете). Остальные —
+     функции этих двух, иначе шапка, покрашенная в светлое, оставалась бы с
+     белыми надписями и белой полосой на белом. */
+  --chrome-bg:        light-dark(#0C3A46, #236172);
+  --chrome-fg:        light-dark(#FFFFFF, #FFFFFF);
+  --chrome-fg-2:      color-mix(in srgb, var(--chrome-fg) 78%, transparent);
+  --chrome-hover:     color-mix(in srgb, var(--chrome-fg) 10%, transparent);
+  --chrome-active-bg: var(--chrome-fg);
+  --chrome-active-fg: var(--chrome-bg);
+  --chrome-search:    var(--surface);
+  --chrome-r:999px;
+
+  /* ── чем что-либо отвечает указателю ────────────────────────────────
+     Четыре обращения, названные здесь и больше нигде. Таблица стилей
+     говорит, какое из них берёт элемент, и никогда не называет своего
+     цвета, расстояния или времени.
+       ink   слово уходит на шаг в акцент: чернила → cyan-11, cyan-11 →
+             cyan-12. В шапке акцент не читается, и там слово идёт fg-2 → fg.
+       wash  подложка делает шаг к собственным чернилам: строка на surface,
+             контрол на ctrl, сплошное на акценте. Одна формула — и шаг
+             идёт в нужную сторону на обеих темах и следует за палитрой.
+       rise  плавающее берёт следующую тень и поднимается на --rise; снимок
+             внутри наплывает на --creep; стрелка сдвигается на --nudge.
+       fill  контурное или тональное заливается акцентом, поверх — on-accent.
+             В шапке это активная пилюля.
+     Линий в языке нет: ничто не растит полоску и не подчёркивает слово.
+     Полоска в поле — метка состояния (открытый вопрос, текущий язык), а не
+     ответ на курсор. Нажатие — правило шапки: предмет проседает до .96,
+     слово уходит на шаг глубже. */
+  --hover-t:200ms;
+  --hover-ink:var(--cyan-11);
+  --hover-ink-2:var(--cyan-12);
+  --hover-row:color-mix(in oklab, var(--surface), var(--sage-12) 4%);
+  --hover-ctrl:color-mix(in oklab, var(--ctrl), var(--sage-12) 5%);
+  --hover-solid:color-mix(in oklab, var(--accent-solid), var(--on-accent) 10%);
+
+  /* Две ступени одного тона у кнопки «в корзину»: пустая светлее, полная
+     темнее. Разница мала нарочно — это не два цвета, а один, сказанный
+     дважды: пока корзина пуста, кнопка чуть звонче и зовёт, набранная —
+     чуть глуше и подтверждает. Ступени взяты сдвигом светлоты от самого
+     тона, а не выбраны рядом с ним, поэтому в тёмной теме они разъезжаются
+     на столько же, на сколько в светлой. */
+  --buy-idle:color-mix(in oklab, var(--accent-solid), var(--on-accent) 7%);
+  --buy-in:color-mix(in oklab, var(--accent-solid), #000 14%);
+  --rise:2px;
+  --creep:1.05;
+  --nudge:3px;
+
+  /* One dial over the whole radius family: the five keep their proportions
+     to each other, so «rounder» and «sharper» are one answer rather than
+     five that have to be kept in step. A pill stays a pill — it is a shape,
+     not a radius. */
+  --round:1;
+  --r-pill:999px;
+  --r-sheet:calc(28px * var(--round));
+  --r-card:calc(24px * var(--round));
+  --r-inner:calc(18px * var(--round));
+  --r-tile:calc(14px * var(--round));
+  --r-xs:calc(10px * var(--round));
+
+  /* Shadows carry the cyan-12 hue, never grey. On a dark ground a shadow is
+     nearly invisible, so depth comes from a hairline of light as well.
+
+     light-dark() takes exactly two arguments. These were written with three
+     and four — a whole shadow stack on each side — and the lowering split
+     them at the first comma: the light theme kept only the tight 1px layer
+     and handed its own soft ambient layer to the dark theme. That is why a
+     white panel sat on the page with almost nothing under it. So the switch
+     lives in each layer's colour now, and the geometry is shared. */
+  --sh-ring: light-dark(color-mix(in srgb, var(--accent-solid) 5%, transparent), rgba(255,255,255,.05));
+  --sh-near: light-dark(color-mix(in srgb, var(--accent-solid) 5%, transparent), rgba(0,0,0,.50));
+  --sh-far-1: light-dark(color-mix(in srgb, var(--accent-solid) 14%, transparent), rgba(0,0,0,.60));
+  --sh-far-2: light-dark(color-mix(in srgb, var(--accent-solid) 20%, transparent), rgba(0,0,0,.68));
+  --sh-far-3: light-dark(color-mix(in srgb, var(--accent-solid) 30%, transparent), rgba(0,0,0,.75));
+  --sh-1: 0 0 0 1px var(--sh-ring), 0 1px 2px var(--sh-near), 0 8px 20px -10px var(--sh-far-1);
+  --sh-2: 0 0 0 1px var(--sh-ring), 0 2px 4px var(--sh-near), 0 20px 44px -18px var(--sh-far-2);
+  --sh-3: 0 0 0 1px var(--sh-ring), 0 4px 8px var(--sh-near), 0 36px 80px -28px var(--sh-far-3);
+  /* Одна манера первичной пилюли. При наведении фон делает шаг к
+     собственному мастилу, и пилюля стоит на тени своего же цвета — и то и
+     другое смешано из акцента, поэтому «Accent» в панели тянет за собой
+     каждую первичную кнопку сайта. Две ступени тени, как --sh-1/--sh-2. */
+  --sh-accent:   0 10px 24px -12px color-mix(in srgb, var(--accent-solid) 55%, transparent);
+  --sh-accent-2: 0 14px 30px -12px color-mix(in srgb, var(--accent-solid) 65%, transparent);
+
+  --ease:cubic-bezier(.32,.72,0,1);
+
+  /* The margin is chosen once and then held down by the window: the panel
+     writes --gut-base, and the two rules at the foot of this file cap it
+     where there is no room for it. Writing --gut itself would have been an
+     inline value that no media query could overrule. */
+  --wrap:1520px; --gut-base:44px; --gut:var(--gut-base);
+  /* The face: IBM Plex Sans, chosen and settled. The fallback stack is named
+     so a slow font never lands the page on Times. */
+  --stack: ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --face: var(--f-plex), var(--stack);
+  /* The headings can be set in a second face, and by default are not: one
+     face is a decision, two is a system, and both are choices the panel
+     offers rather than something a component decides. */
+  --face-head: var(--face);
+
+  /* What every heading on the site is set at. They are here rather than in
+     the six stylesheets that draw a heading, because a page whose headings
+     are set at four sizes has four voices. */
+  /* The cluster in every section head — the two arrows and the way out of
+     the block — stands as one object, so it has one height. Two dials gave
+     37px circles beside a 49px pill, which is not a cluster but three things
+     that happen to be adjacent. */
+  --ctrl-h:40px;
+
+  /* ── лестница течёт, а не переключается ────────────────────────────────
+     Ступени те же, что были: база 16, отношение 1.135 — 12.5 / 14 / 15 /
+     16 / 18 / 22 / 30, ровно те, что носит карточка товара, и ровно те, что
+     считает панель. Изменилось одно: ступень больше не переключается на
+     отметке, она течёт вместе с шириной.
+
+     Концы кривой не выдуманы. Они выписаны из медиазапросов, которые эта
+     запись заменяет: заголовок блока имел `* .733` ниже 600 (30 → 22),
+     подпись — `* .8125` (16 → 13), заголовок героя шёл 64 → 52 → 36. Кривая
+     соединяет те же самые точки непрерывно: на краях всё как было, а между
+     ними перестаёт прыгать. Тем же приёмом переводятся остальные размеры —
+     старый медиазапрос и есть спецификация кривой, его не надо выдумывать.
+
+     Читается так: clamp(нижний предел, наклон, верхний предел). Средняя
+     часть — прямая, где vw это процент ширины окна: на 560px она даёт
+     нижний предел, на 1080 — верхний, между ними идёт линейно. */
+  /* ── лестница размеров ───────────────────────────────────────────────
+     Правило 1 из CLAUDE.md ссылалось на эту шкалу с первого дня, а самой
+     шкалы не было: `var(--fs-title, var(--fs-2xl))` спрашивал её в десятке мест и
+     каждый раз падал на запасное число. Отсюда 153 размера в пикселях —
+     не неряшливость, а отсутствующий фундамент.
+
+     Каждая ступень — пара, а не одно число: нижний конец нарисован от
+     телефона, верхний от десктопа. Взять десктопную шкалу и ужать линейно
+     нельзя — на узком экране контраст заголовка к телу должен сжиматься с
+     примерно 4:1 до 2–2.3:1, иначе заголовок блока сравнивается с
+     заголовком страницы (И9 в docs/rules.md).
+
+     Наклон — тот же, что у `--h2-size`: прямая, дающая нижний конец на
+     560px окна и верхний на 1080. Числа перед `vw` не выдуманы, они
+     выведены: наклон = (макс − мин) / 5.2, свободный член = мин − (макс −
+     мин) × 1.0769. Другой ступени не назначают число на глаз — считают по
+     этой же формуле. */
+  --fs-2xs:clamp(10px, 8.92px + .19vw, 11px);
+  --fs-xs:clamp(11px, 9.38px + .29vw, 12.5px);
+  --fs-sm:clamp(12px, 10.92px + .19vw, 13px);
+  --fs-md:clamp(12.5px, 10.88px + .29vw, 14px);
+  --fs-base:clamp(13.5px, 11.88px + .29vw, 15px);
+  --fs-lg:clamp(14.5px, 12.88px + .29vw, 16px);
+  --fs-xl:clamp(16px, 13.85px + .38vw, 18px);
+  --fs-2xl:clamp(18px, 13.69px + .77vw, 22px);
+  --fs-h3:clamp(20px, 13.54px + 1.15vw, 26px);
+  /* Две верхние ступени уже существуют под своими именами — их держит
+     панель. Шкала не заводит им двойников, а называет: одна вещь, два
+     имени, и правится она в одном месте. */
+  --fs-h2:var(--h2-size);
+  --fs-h1:var(--hero-size);
+
+  /* Нижний конец опущен с 22 до 18, и это не вкусовщина. До 820 заголовок
+     раздела брал `calc(var(--h2-size) * .8)` в медиазапросе: на 821px он
+     стоял 26px, на 820px — 20.8px, ступенька в пять пикселей на одном
+     пикселе ширины. Множитель существовал потому, что на телефоне контраст
+     заголовка к телу обязан сжиматься (И9), — но лестница умеет это сама,
+     если её нижний конец и есть телефонный размер. Теперь 18 на 560, 24 на
+     820, 30 на 1080: то же сжатие, без ступеньки. */
+  --h2-size:clamp(18px, 5.08px + 2.31vw, 30px);
+  --h2-lead:1.15; --h2-weight:600; --h2-track:-.025em;
+
+  /* Подзаголовок блока и лид. Раньше жил только запасным значением в шести
+     файлах (`var(--lede-size, var(--fs-lg))`), из-за чего панель им управляла, а
+     умолчание было размазано. Теперь объявлен один раз здесь. */
+  --lede-size:clamp(13px, 9.77px + .58vw, 16px);
+
+  /* Заголовок героя — единственный размер вне лестницы: 64px это ступень
+     ~11, туда лестница не дотягивается, да и первый экран живёт своим
+     голосом. Концы — те же 36 и 64 из home.module.css. */
+  --hero-size:clamp(36px, 18.18px + 3.18vw, 64px);
+
+  --body-size:15px; --body-lead:1.45;
+
+  /* ── мера набора ─────────────────────────────────────────────────────
+     Сколько знаков стоит в строке. Классическое «45–75» — про НАСТОЯЩИЕ
+     знаки, а `ch` это ширина цифры «0», и она заметно шире средней буквы.
+     Замерено на собранном сайте: колонка в 66ch при шрифте 15px даёт 81
+     настоящий знак — то есть привычная «мера в 66ch» промахивается мимо
+     верхней границы на восемь процентов.
+
+     Поэтому число выведено, а не взято из статьи: 594px / 81 знак = 7.33px
+     на знак, то есть 0.49em. Семьдесят знаков просят 513px, а это 57ch.
+     Ставим 58 — с округлением в сторону читаемости. */
+  /* Размер знака магазина. Не ступень лестницы: марка это рисунок, и в
+     лестницу текста она не встаёт — но и числом в файле стоять не должна,
+     иначе крупный знак на телефоне не сожмётся. Концы те же 26 и 32, что
+     стояли числами. */
+  --brand-size:clamp(26px, 19.54px + 1.15vw, 32px);
+
+  --measure:58ch;
+  /* Лид и пояснение живут короче основного текста: они читаются мельком, и
+     длинная строка мимоходом не читается вовсе. */
+  --measure-lede:52ch;
+
+  /* Заголовок страницы, которая не главная: «Каталог», «Корзина»,
+     «Оформяне». Между лестницей и героем: h2 на 1440 — 30px, герой — 55px,
+     а заголовок страницы стоял 38px числом в примитивах, со ступенькой на
+     820 (38 → 24 на одном пикселе ширины). Теперь это ступень. */
+  --fs-page:clamp(24px, 8.92px + 2.69vw, 38px);
+
+  /* ── лестница ритма ──────────────────────────────────────────────────
+     Правило 2 из CLAUDE.md ссылается на `--sp-1 … --sp-9` с первого дня, и
+     ровно как с размерами — самой шкалы не было. Отсюда 483 отступа
+     числом: не неряшливость, а отсутствующий фундамент. Число ставили
+     потому, что попросить было нечего.
+
+     Устроена по той же формуле, что и размеры: наклон = (макс − мин) / 5.2,
+     свободный член = мин − (макс − мин) × 1.0769, концы на 560 и 1080.
+
+     Но течёт она не равномерно, и это главное в ней. Мелкие ступени почти
+     стоят: 4px под скруглением штриха — это 4px и на телефоне, и на
+     мониторе, волосок не бывает «телефонным». Крупные текут сильно: 64px
+     воздуха между разделами на десктопе читаются как воздух, а на телефоне
+     это треть экрана, потраченная на ничто. Поэтому ступень тем подвижнее,
+     чем она больше — 1 и 2 не двигаются вовсе, 9 ходит на треть себя.
+
+     Числа взяты не с потолка: это то, что в вёрстке уже стояло. Считано по
+     файлам — 10, 12, 16, 8, 6, 14, 22, 28, 18, 24, 20, 26, 32, 36, 48, 64,
+     72. Шкала, не покрывающая того, чем пользуются, не заменяет числа, а
+     добавляется к ним третьим способом делать то же самое. */
+  --sp-1:4px;                                    /* оптика: под скруглением */
+  --sp-2:8px;                                    /* внутри контрола */
+  --sp-3:clamp(10px, 7.85px + .38vw, 12px);      /* между строк группы */
+  --sp-4:clamp(14px, 11.85px + .38vw, 16px);     /* поле карточки */
+  --sp-5:clamp(18px, 13.69px + .77vw, 22px);     /* поле крупной карточки */
+  --sp-6:clamp(22px, 15.54px + 1.15vw, 28px);    /* между блоками внутри */
+  --sp-7:clamp(28px, 19.38px + 1.54vw, 36px);    /* заголовок к содержимому */
+  --sp-8:clamp(36px, 23.08px + 2.31vw, 48px);    /* между полками */
+  --sp-9:clamp(48px, 30.77px + 3.08vw, 64px);    /* между разделами */
+
+  /* Дорожка сетки, считающая себя сама (правило 5) — РЕЦЕПТ, а не токен.
+     Блок объявляет --n (сколько ячеек хочет в ряд) и --cell-min (уже которой
+     ячейка не читается) и пишет у себя:
+
+       grid-template-columns:repeat(auto-fit, minmax(max(var(--cell-min),
+         calc((100% - (var(--n) - 1) * var(--grid-gap)) / var(--n))), 1fr));
+
+     Дорожка берёт большее из доли ряда на --n и минимума: пока ряд широк,
+     колонок ровно --n; как только доля уходит под минимум, auto-fit
+     укладывает столько, сколько поместилось. Отсюда и верхний предел, и
+     то, ради чего всё: перестроение размазывается по ширинам, а не
+     случается рывком на общей отметке.
+
+     Почему рецептом, а не переменной --tracks здесь. var() внутри
+     собственной переменной раскрывается ТАМ, ГДЕ ПЕРЕМЕННАЯ ОБЪЯВЛЕНА, а
+     вниз наследуется уже готовая строка. Объявленная в :root, она
+     подставляла бы сюда запасные значения — и все сетки считали бы по ним,
+     молча игнорируя свои заявки. Ровно это и происходило, пока не измерили
+     вычисленное значение. Выражение обязано стоять на том же элементе, что
+     и --n. */
+
+  /* ── нижний край телефона ────────────────────────────────────────────
+     На телефоне навигация уходит вниз, и страница обязана оставить под неё
+     место. Место это стояло тремя разными числами в трёх файлах: полоса
+     висела на 14 и была высотой 68, страница отступала 104, помощник
+     поднимался на 116. Числа сходились, пока их не трогали, — а стоило
+     полосе стать на четыре пикселя выше, и разошлись бы все три, каждое
+     молча.
+
+     Теперь известны два: высота полосы и её отступ от края. Резерв
+     считается из них, и всё, что стоит внизу, считает от резерва. На
+     широком окне полосы нет — резерв ноль, и ни одного медиазапроса на
+     стороне тех, кто им пользуется. */
+  --tab-h:68px; --tab-gap:14px; --dock:0px;
+
+  --chrome:64px; --float:10px;
+  /* the height the working row settles to once the strip above it has
+     collapsed. Anything that has to stand clear of the stuck header — the
+     FAQ's column — offsets by this and not by --chrome, which is the height
+     before the collapse. */
+  --chrome-stuck:56px;
+  /* the working row's inner padding — the page's left line follows it */
+  --head-pad:20px;
+  /* The page's left line, written once. On a wide window it follows the
+     header's inner padding, so the first word of the page stands under the
+     logo rather than under the edge of the row. */
+  --page-gut:calc(var(--gut) + var(--head-pad));
+}
+
+/* An explicit choice overrules the operating system, in both directions. */
+:root[data-theme='light']{ color-scheme: light }
+:root[data-theme='dark']{ color-scheme: dark }
+
+@media (max-width:1080px){ :root{ --gut:min(var(--gut-base),24px) } }
+@media (max-width:820px){ :root{ --gut:min(var(--gut-base),16px); --chrome:56px } }
+/* On a phone the header stops being a row inside the page and becomes a card
+   floating at --gut, with the tab bar a pill below it at much the same line;
+   both collapse their inner padding to 8px. The page keeps following the
+   header — but now it follows the card's EDGE, not the padding inside it.
+   Carrying the desktop's 20px down here cost 40px of a 360px screen: the two
+   columns of the index were narrower than the bars above and below them. */
+@media (max-width:820px){ :root{ --page-gut:var(--gut) } }
+/* Резерв под нижнюю полосу: сама полоса, её отступ от края экрана и столько
+   же воздуха над ней, чтобы последняя строка страницы не липла к полосе. */
+@media (max-width:820px){ :root{ --dock:calc(var(--tab-h) + var(--tab-gap) * 2) } }

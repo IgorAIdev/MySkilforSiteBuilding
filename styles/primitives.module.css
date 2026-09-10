@@ -1,0 +1,281 @@
+/* ===========================================================================
+   Primitives — the handful of classes more than one component needs.
+   Everything else is component-scoped in a *.module.css next to its component.
+   =========================================================================== */
+
+/* The dark row is a pill, so where its colour actually starts is not its box
+   edge — the cap curve eats the first 30-odd pixels and content lined up with
+   that edge reads as spilling out to the left. So the page lines up with the
+   header's own text instead: gutter plus the row's inner padding. */
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 var(--page-gut)}
+
+/* ═══ раскладка: пять примитивов ══════════════════════════════════════════
+   Заведено после того, как стало ясно, чем именно дорога прежняя работа.
+   Каждый блок держал раскладку сам: свои отступы числом, свои медиазапросы,
+   свою логику «когда две колонки становятся одной». Починка одного абзаца
+   не помогала соседнему, потому что общего у них не было ничего — и правки
+   шли по одной, каждая своим полднем.
+
+   Примитив — это одно решение раскладки, названное и вынесенное наружу.
+   Их пять, и они закрывают почти всё, что делает страница: положить в
+   столбик, положить в строку с переносом, разложить на две колонки, увести
+   в прокрутку, ограничить меру. Блок больше не описывает раскладку — он
+   выбирает из пяти и настраивает её ручкой.
+
+   Настраиваются они переменными, а не вариантами класса: `--stack`,
+   `--switch-at`, `--rail-gap`. Вариант класса пришлось бы заводить под
+   каждое новое число; переменная принимает любую ступень шкалы, и ступень
+   видна в том же месте, где раскладка.  */
+
+/* Stack — столбик с одним ритмом. Отступ ставится между соседями, а не
+   каждому элементу: у первого сверху ничего не остаётся, и блок не тащит
+   за собой чужой воздух, когда его переставят выше. */
+.stack{display:flow-root}
+.stack > * + *{margin-block-start:var(--stack, var(--sp-6))}
+
+/* Cluster — строка, которая переносится. Пилюли, теги, ряд кнопок, шапка
+   раздела. Перенос здесь не аварийный режим, а обычная работа: заранее
+   неизвестно ни сколько элементов положат, ни какой длины будут слова. */
+.cluster{display:flex;flex-wrap:wrap;align-items:center;gap:var(--cluster, var(--sp-3))}
+
+/* Switcher — две колонки, становящиеся одной без единого медиазапроса.
+   Это и есть ответ на «мёртвую зону 700–1050»: там ломалось не потому, что
+   не хватало брейкпоинта, а потому, что раскладку решало окно. Здесь её
+   решает сам контейнер — и один и тот же блок в рельсе, в сетке и во всю
+   ширину ведёт себя правильно, ничего не зная про окно (правило 6).
+
+   Механика: пока контейнер уже `--switch-at`, скобка положительна и
+   умножение на 999 делает основу заведомо больше ряда — каждый ребёнок
+   забирает строку. Стал шире — скобка отрицательна, основа схлопывается в
+   ноль, и дети делят ряд. Порог сравнивается с шириной РОДИТЕЛЯ, потому
+   что 100% здесь — это он. */
+.switcher{display:flex;flex-wrap:wrap;gap:var(--switch-gap, var(--sp-6))}
+.switcher > *{flex-grow:1;flex-basis:calc((var(--switch-at, 640px) - 100%) * 999)}
+/* Доля, если колонки неравные: `--bias` кратен единице второй колонки. */
+.switcher > .bias{flex-grow:var(--bias, 2)}
+
+/* Rail — полоса, уходящая в прокрутку. На телефоне ряд из восьми пилюль
+   либо переносится в четыре строки, либо едет; едет — честнее, потому что
+   сохраняет порядок и не съедает первый экран. Прилипание proximity, а не
+   mandatory: mandatory отнимает у пальца право остановиться где хочется.
+
+   Отступ по вертикали с равным отрицательным полем — чтобы кольцо фокуса
+   и тень не срезались обрезкой прокрутки, не сдвигая при этом ритм. */
+.rail{
+  display:flex;flex-wrap:nowrap;gap:var(--rail-gap, var(--sp-4));
+  overflow-x:auto;overscroll-behavior-x:contain;
+  scroll-snap-type:x proximity;scrollbar-width:none;
+  padding-block:var(--sp-1);margin-block:calc(var(--sp-1) * -1);
+}
+.rail::-webkit-scrollbar{display:none}
+.rail > *{flex:none;scroll-snap-align:start}
+
+/* Prose — мера набора. Строка длиннее 75 знаков теряется на возврате, и
+   это единственная причина, по которой у текста бывает потолок ширины.
+   Заголовкам он не нужен: у них строка и так короткая, а мера превращает
+   их в колонку в половину экрана (И2). */
+.prose{max-inline-size:var(--measure, 58ch)}
+.prose p{text-wrap:pretty}
+
+/* Tap — запас нажатия вокруг мелкого органа.
+   Палец это 44×44: столько просят и Apple, и Material, и WCAG 2.5.8. Но
+   нарисован орган бывает мельче по делу — сердце «сохранить» в углу снимка
+   в 32px это правильный рисунок, а не недосмотр. Меняется не рисунок, а
+   область попадания: невидимый прямоугольник по центру кнопки, который
+   больше её. Раскладка вокруг о нём не знает — он вынут из потока.
+
+   Запас, а не отступ: отступом пришлось бы двигать всё вокруг, и на
+   карточке товара сердце уехало бы от угла снимка. */
+/* Said — заголовок, который держит лестницу, но глазу не нужен.
+   Сетка товаров в каталоге подписана заголовком страницы, второго заголовка
+   на экране не надо. Но скринридер ходит по странице заголовками, и прыжок
+   с h1 сразу на h3 читается как «здесь что-то потеряно». Убрать нельзя,
+   рисовать незачем — значит, сказать вслух и не рисовать.
+
+   `clip-path`, а не `display:none` и не `visibility:hidden`: и то и другое
+   убирает элемент из чтения вслух тоже, то есть отменяет весь смысл. */
+.said{
+  position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
+}
+
+.tap{position:relative}
+.tap::after{
+  content:'';position:absolute;left:50%;top:50%;translate:-50% -50%;
+  width:max(100%, var(--tap, 44px));height:max(100%, var(--tap, 44px));
+}
+
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--sage-11)}
+
+/* A group label — sentence case, not capitals with tracking. */
+.eyebrow{font-size:var(--fs-eyebrow, var(--fs-xs));font-weight:600;color:var(--sage-11);letter-spacing:.01em}
+
+/* Keyboard users get a way past the header before the page content. */
+/* Приезжает `transform`, а не `top`. Разница не косметическая: `top` — это
+   раскладка, и браузер пересчитывает её на каждом кадре; `transform`
+   пропускает раскладку и отрисовку и считается видеокартой. Ссылка одна и
+   ездит редко, но правило одно на весь код, а исключение, сделанное «тут же
+   мелочь», через месяц стоит в двадцати местах. */
+.skip{
+  position:absolute;left:50%;top:var(--sp-3);z-index:200;
+  transform:translate(-50%, -200%);
+  background:var(--accent-solid);color:var(--on-accent);padding:var(--sp-3) var(--sp-5);border-radius:var(--r-pill);
+  font-size:var(--fs-md);font-weight:600;transition:transform var(--hover-t) var(--ease);
+}
+.skip:focus-visible{transform:translate(-50%, 0)}
+
+/* ── buttons ──────────────────────────────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);
+  height:46px;padding:0 var(--sp-5);border-radius:var(--r-pill);
+  font-size:var(--fs-base);font-weight:600;white-space:nowrap;
+  transition:background var(--hover-t) var(--ease),color var(--hover-t) var(--ease),transform var(--hover-t) var(--ease),box-shadow var(--hover-t) var(--ease);
+}
+@media (hover:hover){ .btn:hover{transform:translateY(calc(-1 * var(--rise)))} }
+.btn:active{transform:translateY(calc(-1 * var(--rise)))}
+.btn:active{transform:scale(.97)}
+.btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.btnPrimary{background:var(--accent-solid);color:var(--on-accent);box-shadow:var(--sh-accent)}
+@media (hover:hover){ .btnPrimary:hover{background:var(--hover-solid);box-shadow:var(--sh-accent-2)} }
+.btnPrimary:active{background:var(--hover-solid);box-shadow:var(--sh-accent-2)}
+.btnAmber{background:var(--amber-9);color:var(--amber-12);box-shadow:0 10px 24px -12px rgba(171,100,0,.5)}
+@media (hover:hover){ .btnAmber:hover{background:var(--amber-10)} }
+.btnAmber:active{background:var(--amber-10)}
+.btnGhost{background:var(--surface);color:var(--sage-12);box-shadow:var(--sh-1)}
+@media (hover:hover){ .btnGhost:hover{box-shadow:var(--sh-2)} }
+.btnGhost:active{box-shadow:var(--sh-2)}
+/* on a white card a white button disappears: there the secondary is tonal */
+.btnTonal{background:var(--ctrl);color:var(--sage-12)}
+@media (hover:hover){ .btnTonal:hover{background:var(--hover-ctrl)} }
+.btnTonal:active{background:var(--hover-ctrl)}
+.btnLg{height:54px;padding:0 var(--sp-6);font-size:var(--fs-lg)}
+.btnBlock{display:flex;width:100%;white-space:normal;min-width:0}
+.btn[disabled]{opacity:.45;pointer-events:none}
+
+/* ── chips ────────────────────────────────────────────────────────────── */
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  height:28px;padding:0 11px;border-radius:var(--r-pill);
+  background:var(--sage-3);
+  font-size:var(--fs-sm);font-weight:500;color:var(--sage-11);
+}
+.chipLab{background:var(--cyan-3);color:var(--cyan-11);font-weight:600;font-size:var(--fs-xs);height:26px;padding:0 10px}
+.chipLab svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── fields ───────────────────────────────────────────────────────────── */
+.input{
+  height:46px;padding:0 var(--sp-4);border:0;border-radius:var(--r-tile);
+  background:var(--surface);box-shadow:var(--sh-1);font-size:var(--fs-base);outline:0;
+  transition:box-shadow var(--hover-t) var(--ease);
+}
+.input::placeholder{color:var(--sage-11)}
+.input:focus{box-shadow:var(--sh-1),0 0 0 4px var(--cyan-4)}
+textarea.input{height:auto;padding:var(--sp-3) var(--sp-4);resize:vertical;min-height:88px;line-height:1.5}
+select.input{
+  height:40px;padding:0 38px 0 var(--sp-4);border-radius:var(--r-pill);appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235C6662' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9.5 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;background-size:14px;
+}
+
+/* ── the counter — the one thing that is always a pill ────────────────── */
+/* Счётчик — то единственное, что всегда пилюля. Рисуется на трёх размерах:
+   54 в покупке и в корзине, --btn-h на карточке. Всё внутри идёт за --qty-h,
+   поэтому размер — одна ручка, а не четыре числа, которые держат в уме. */
+.qty{
+  display:flex;align-items:center;flex:none;
+  height:var(--qty-h,54px);padding:calc(var(--qty-h,54px) * .074);
+  background:var(--ctrl);border-radius:var(--r-pill);
+}
+.qty button{
+  height:100%;aspect-ratio:1;width:auto;border-radius:50%;
+  display:grid;place-items:center;color:var(--sage-11);
+  transition:background var(--hover-t) var(--ease),color var(--hover-t) var(--ease),box-shadow var(--hover-t) var(--ease),transform var(--hover-t) var(--ease);
+}
+@media (hover:hover){ .qty button:hover{color:var(--sage-12);background:var(--surface);box-shadow:var(--sh-1)} }
+.qty button:active{color:var(--sage-12);background:var(--surface);box-shadow:var(--sh-1)}
+.qty button:active{transform:scale(.92)}
+.qty button svg{
+  width:calc(var(--qty-h,54px) * .33);height:calc(var(--qty-h,54px) * .33);
+  fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;
+}
+.qty input,.qty b{
+  height:100%;text-align:center;border:0;background:none;outline:0;
+  font-size:var(--qty-fs,16px);font-weight:600;font-variant-numeric:tabular-nums;color:var(--sage-12);
+}
+.qty input{width:calc(var(--qty-h,54px) * .74)}
+.qty b{display:grid;place-items:center;min-width:calc(var(--qty-h,54px) * .7)}
+
+/* ── a segmented control ──────────────────────────────────────────────── */
+.seg{display:flex;flex-wrap:wrap;gap:var(--sp-1)}
+.seg button{
+  height:30px;padding:0 11px;border-radius:var(--r-pill);background:var(--sage-3);
+  font-size:var(--fs-sm);color:var(--sage-11);
+  transition:background var(--hover-t) var(--ease),color var(--hover-t) var(--ease);
+}
+@media (hover:hover){ .seg button:hover{background:var(--hover-ctrl);color:var(--sage-12)} }
+.seg button:active{background:var(--hover-ctrl);color:var(--sage-12)}
+.seg button[aria-pressed="true"]{background:var(--accent-solid);color:var(--on-accent);font-weight:600}
+
+/* ── sections ─────────────────────────────────────────────────────────── */
+/* Воздух между разделами — верхняя ступень шкалы, и течёт он вместе с ней:
+   64px на десктопе читаются как воздух, те же 64 на телефоне — это треть
+   экрана, потраченная на ничто. Раньше это была пара чисел со ступенькой на
+   820 (72 → 48 на одном пикселе ширины). */
+.section{padding-block:var(--sp-9) 0}
+.sectionTight{padding-block:var(--sp-8) 0}
+.sectionHead{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-6);margin-bottom:var(--sp-7)}
+/* every heading on the page reads one size and one leading */
+.sectionHead h2{
+  font-size:var(--h2-size, var(--fs-h2));font-weight:var(--h2-weight,600);
+  letter-spacing:var(--h2-track,-.025em);line-height:var(--h2-lead,1.15);
+}
+.sectionHead p{
+  color:var(--sage-11);margin-top:var(--sp-2);max-width:var(--measure-lede);
+  font-size:var(--lede-size, var(--fs-lg));line-height:var(--lede-lead,1.5);
+}
+
+/* the "more" link — the arrow sits in its own circle, not bare beside text */
+.more{
+  display:inline-flex;align-items:center;gap:var(--sp-3);flex:none;
+  padding:5px 5px 5px var(--sp-4);border-radius:var(--r-pill);
+  background:var(--surface);box-shadow:var(--sh-1);
+  font-size:var(--more-fs,14px);font-weight:600;color:var(--cyan-12);
+  transition:box-shadow var(--hover-t) var(--ease),transform var(--hover-t) var(--ease);
+}
+@media (hover:hover){ .more:hover{box-shadow:var(--sh-2);transform:translateY(calc(-1 * var(--rise)))} }
+.more:active{box-shadow:var(--sh-2);transform:translateY(calc(-1 * var(--rise)))}
+.more svg{width:28px;height:28px;padding:7px;border-radius:50%;background:var(--cyan-3);fill:none;stroke:var(--cyan-11);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--hover-t) var(--ease)}
+@media (hover:hover){ .more:hover svg{transform:translateX(var(--nudge))} }
+.more:active svg{transform:translateX(var(--nudge))}
+
+.crumbs{font-size:var(--fs-sm);color:var(--sage-11);padding:var(--sp-5) 0 var(--sp-4)}
+@media (hover:hover){ .crumbs a:hover{color:var(--hover-ink)} }
+.crumbs a:active{color:var(--hover-ink)}
+.pagehead{padding-bottom:var(--sp-7)}
+.pagehead h1{font-size:var(--fs-page);font-weight:700;letter-spacing:-.03em}
+.pagehead p{color:var(--sage-11);margin-top:var(--sp-2);max-width:var(--measure)}
+
+/* Осталась одна вещь, которая здесь и должна остаться: шапка раздела
+   меняет СМЫСЛ раскладки — имя и кнопка выхода перестают быть строкой и
+   становятся столбиком. Ровно то, ради чего брейкпоинт и разрешён
+   (правило 3). Четыре числа, стоявшие рядом, ушли в шкалу, а две ступени
+   размера — в лестницу: они меняли не смысл, а величину. */
+@media (max-width:820px){
+  .sectionHead{flex-direction:column;align-items:flex-start;gap:var(--sp-3)}
+}
+
+/* Пальцу — сорок четыре. Условие тут не ширина окна, а устройство ввода. */
+@media (pointer:coarse){
+  .more{min-height:44px}
+  .skip{min-height:44px;align-items:center;display:inline-flex}
+  .input{min-height:44px}
+  select.input{min-height:44px}
+  .seg button{min-height:44px}
+  .btn{min-height:44px}
+}
+
+/* Пальцу — сорок четыре. Условие тут не ширина окна, а устройство ввода. */
+@media (pointer:coarse){
+  .crumbs a{display:inline-flex;align-items:center;min-height:44px}
+}

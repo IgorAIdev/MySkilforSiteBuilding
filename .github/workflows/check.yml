@@ -1,0 +1,39 @@
+# Проверки, которые не требуют, чтобы о них помнили.
+#
+# Три быстрые идут на каждый push и не нуждаются ни в чём, кроме node.
+# Две тяжёлые — по отрисованной странице — поднимают браузер и сам сайт;
+# они медленнее, поэтому стоят отдельным заданием и не блокируют первое.
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run check:css
+      - run: npm run build
+
+  rendered:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      # Сервер обязан уметь чистые адреса: `/product` — это `product.html`.
+      # `python3 -m http.server` их не умеет и отдаёт листинг каталога —
+      # проверка тогда мерит листинг и молча зеленеет.
+      - run: npx serve out -l 8099 &
+      - run: npx wait-on http://localhost:8099 -t 30000
+      - run: npm run check:craft
+      - run: npm run sweep
