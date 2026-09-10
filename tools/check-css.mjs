@@ -45,7 +45,7 @@ function walk(dir) {
   }
 }
 
-const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], halfRole: [], motion: [] }
+const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], halfRole: [], nearStep: [], motion: [] }
 
 /* Комментарий — не код. Объяснение, ПОЧЕМУ брейкпоинт убран, само считалось
    брейкпоинтом; абзац про `padding-block: var(--sp-9)` — отступом. Режется с
@@ -58,6 +58,33 @@ const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], halfR
    Второй проход резал комментарии, а первый — нет, и правка легла мимо.
    Признак тот же, что всегда: адрес не сходится с тем, что видно глазом. */
 const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+
+/* Управляющий байт в файле стилей — не мелочь и не косметика.
+ *
+ * По правилам CSS нулевой байт внутри объявления делает его недействительным:
+ * браузер выбрасывает СТРОКУ ЦЕЛИКОМ и молчит. Так у кнопки выхода пропало
+ * `padding` — надпись встала впритык к краю, и выглядело это как «кнопка не
+ * подстраивается под текст». Шесть таких байтов попали в файл правкой
+ * скриптом; ни один инструмент об этом не сказал.
+ *
+ * Проверка валит сборку сразу, а не считает храповиком: это не долг, который
+ * чинят в своём темпе, а испорченный файл. */
+const dirty = []
+for (const path of files) {
+  const raw = readFileSync(path)
+  const bad = [...raw].filter((b) => b < 9 || (b > 13 && b < 32)).length
+  if (bad) dirty.push(`${relative(ROOT, path)}: ${bad}`)
+}
+if (dirty.length) {
+  /* Все сразу, а не первый попавшийся: испорчен обычно не один файл — их
+     портит одна и та же неудачная правка скриптом. */
+  console.error('\n✗ Управляющие байты в файлах стилей:')
+  for (const d of dirty) console.error(`    ${d}`)
+  console.error('\n  Браузер выбросит объявления, в которых они стоят, и не скажет об этом.')
+  console.error('  Починить все:')
+  console.error("    node -e \"const fs=require('fs');for(const f of process.argv.slice(1)){const b=fs.readFileSync(f);fs.writeFileSync(f,Buffer.from([...b].filter(c=>c>=32||[9,10,13].includes(c))))}\" " + dirty.map((d) => d.split(':')[0]).join(' '))
+  process.exit(1)
+}
 
 for (const path of files) {
   const rel = relative(ROOT, path)
@@ -163,6 +190,25 @@ for (const path of files) {
     const block = css.slice(open, close)
     if (/--surface\s*:/.test(block)) continue
     add('halfRole', `${at(m.index)}  ${head.trim().slice(0, 44)} — знак переопределён, поверхность нет`)
+  }
+
+  /* Та же пара, сломанная с другой стороны: фон записан ЛИТЕРАЛОМ, а краска
+     взята токеном, который зависит от фона раздела.
+
+     Стрелка героя на наведении: `background:#fff; color:var(--sage-12)`. На
+     тёмной палубе `--sage-12` становится белым — и знак пропадает на белом
+     кружке. Заказчик снова нашёл это глазом, уже второй раз в тот же день:
+     первый был у пилюль, и починен был только он. Дефект чинится во всех
+     местах сразу, а не там, где показали, — потому и проверка. */
+  for (const m of css.matchAll(/background(?:-color)?\s*:\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|white)\s*[;}]/g)) {
+    const open = css.lastIndexOf('{', m.index)
+    const close = css.indexOf('}', m.index)
+    if (open < 0 || close < open) continue
+    const block = css.slice(open, close)
+    const ink = block.match(/(?:^|[;{])\s*color\s*:\s*var\(--(sage-1[12]|chrome-fg[a-z0-9-]*)\)/)
+    if (!ink) continue
+    const head = css.slice(Math.max(0, css.lastIndexOf('}', open) + 1), open)
+    add('halfRole', `${at(m.index)}  ${head.trim().slice(0, 40)} — фон литералом, краска токеном --${ink[1]}`)
   }
 
   /* `@container` — не брейкпоинт. Контейнерный запрос меряет ширину своего
@@ -285,6 +331,39 @@ for (const file of files) {
   }
 }
 
+/* Ступени, которые глаз не различает.
+ *
+ * Шкала размера была: 11 · 12.5 · 13 · 14 · 15 · 16 · 18 · 22 · 26. Четыре
+ * соседние пары отличались на 4–7% — это не две роли, а одна, записанная
+ * дважды. Роль, неотличимая от соседней, не работает: подпись под карточкой
+ * и текст в ней читаются как одно, и выбирать между ними приходится наугад.
+ *
+ * Порог 8% взят снизу: ниже него разница в 13 и 14 пикселей не видна никому,
+ * включая того, кто её ставил. Шкалы, на которые ссылаются пособия (Material,
+ * модульные лестницы), шагают на 12–25%.
+ *
+ * Мерятся ОБА конца clamp: шкала течёт, и сойтись ступени могут на любом.
+ */
+const LADDER = join(ROOT, 'styles/tokens.css')
+if (existsSync(LADDER)) {
+  const css = strip(readFileSync(LADDER, 'utf8'))
+  const steps = []
+  for (const m of css.matchAll(/--fs-([a-z0-9]+)\s*:\s*clamp\(\s*([\d.]+)px[^,]*,[^,]*,\s*([\d.]+)px\s*\)/g)) {
+    steps.push({ name: m[1], min: Number(m[2]), max: Number(m[3]) })
+  }
+  for (let i = 1; i < steps.length; i++) {
+    const a = steps[i - 1], b = steps[i]
+    for (const end of ['min', 'max']) {
+      const ratio = b[end] / a[end]
+      if (ratio > 1 && ratio < 1.08) {
+        found.nearStep.push(
+          `styles/tokens.css  --fs-${a.name} → --fs-${b.name}: ${a[end]} → ${b[end]}px ` +
+          `(${Math.round((ratio - 1) * 100)}%, ${end === 'min' ? 'узкий' : 'широкий'} конец)`)
+      }
+    }
+  }
+}
+
 const counts = Object.fromEntries(Object.entries(found).map(([k, v]) => [k, v.length]))
 
 if (process.argv.includes('--update')) {
@@ -307,6 +386,7 @@ const NAMES = {
   breakpoint: `брейкпоинт вне ${BREAKPOINTS.join('/')} (правило 3)`,
   ratioNoCap: 'aspect-ratio без max-block-size (правило 4)',
   halfRole: 'роль переопределена наполовину: знак сменили, поверхность нет',
+  nearStep: 'соседние ступени шкалы ближе 8% — глаз их не различает',
   motion: 'движение: двигает раскладку, дольше 500ms или ease-in',
 }
 

@@ -74,7 +74,7 @@ const ROOT = new URL('..', import.meta.url).pathname
  *  в браузер целиком и ничего оттуда не импортирует. */
 const measure = (phone) => {
   const out = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
-                weight: [], jump: [], name: [], heads: [], dark: [] }
+                weight: [], jump: [], name: [], heads: [], dress: [], dark: [] }
   const seen = new Set()
 
   const lum = (c) => {
@@ -456,6 +456,22 @@ const measure = (phone) => {
     prev = lvl
   }
 
+  /* Одно действие — одна одежда.
+   *
+   * Выход из блока («весь индекс») рисуется общим компонентом, который берёт
+   * одежду из выбранного набора. На странице товара стояла своя, записанная
+   * буквой прямо в разметке: та же кнопка выходила другой высоты, без поля и
+   * с лишней литерой. Заказчик увидел это глазом, сравнив два экрана.
+   *
+   * Признак в файле не виден: разметка там законная, а расходятся страницы.
+   * Виден он ровно здесь — на отрисованной странице, где одежд оказывается
+   * больше одной. */
+  const dresses = [...new Set([...document.querySelectorAll('[data-more]')]
+    .filter(shown).map((el) => el.dataset.more))]
+  if (dresses.length > 1) {
+    out.dress.push(`одежд у выхода из блока: ${dresses.length} (${dresses.join(', ')}) — должна быть одна`)
+  }
+
   return out
 }
 
@@ -475,7 +491,7 @@ const desk = await browser.newContext()
 const hand = await browser.newContext({ hasTouch: true, isMobile: true, deviceScaleFactor: 1 })
 let page = await desk.newPage()
 const found = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
-                weight: [], jump: [], name: [], heads: [] }
+                weight: [], jump: [], name: [], heads: [], dress: [] }
 
 for (const path of PAGES) {
   for (const w of WIDTHS) {
@@ -612,6 +628,7 @@ const NAMES = {
   jump: 'картинка без width/height — вёрстка прыгнет',
   name: 'орган без имени (ни текста, ни aria-label, ни alt)',
   heads: 'лестница заголовков: пропуск уровня или не один h1',
+  dress: 'одно действие в двух одеждах: выход из блока рисуется по-разному',
 }
 
 /* `--list <семья>` печатает найденное целиком, не трогая базу: чинить проще,

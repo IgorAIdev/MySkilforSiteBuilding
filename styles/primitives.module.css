@@ -121,7 +121,7 @@
   position:absolute;left:50%;top:var(--sp-3);z-index:200;
   transform:translate(-50%, -200%);
   background:var(--accent-solid);color:var(--on-accent);padding:var(--sp-3) var(--sp-5);border-radius:var(--r-pill);
-  font-size:var(--fs-md);font-weight:600;transition:transform var(--hover-t) var(--ease);
+  font-size:var(--fs-sm);font-weight:600;transition:transform var(--hover-t) var(--ease);
 }
 .skip:focus-visible{transform:translate(-50%, 0)}
 
@@ -149,7 +149,7 @@
 .btnTonal{background:var(--ctrl);color:var(--sage-12)}
 @media (hover:hover){ .btnTonal:hover{background:var(--hover-ctrl)} }
 .btnTonal:active{background:var(--hover-ctrl)}
-.btnLg{height:54px;padding:0 var(--sp-6);font-size:var(--fs-lg)}
+.btnLg{height:54px;padding:0 var(--sp-6);font-size:var(--fs-base)}
 .btnBlock{display:flex;width:100%;white-space:normal;min-width:0}
 .btn[disabled]{opacity:.45;pointer-events:none}
 
@@ -236,7 +236,7 @@ select.input{
 }
 .sectionHead p{
   color:var(--sage-11);margin-top:var(--sp-2);max-width:var(--measure-lede);
-  font-size:var(--lede-size, var(--fs-lg));line-height:var(--lede-lead,1.5);
+  font-size:var(--lede-size, var(--fs-base));line-height:var(--lede-lead,1.5);
 }
 
 /* the "more" link — the arrow sits in its own circle, not bare beside text */
