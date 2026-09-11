@@ -41,7 +41,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { LOCALES } from './routes.mjs'
+import { LOCALES, DEFAULT_LANG } from './routes.mjs'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const OUT = join(ROOT, 'out')
@@ -51,6 +51,34 @@ if (!existsSync(OUT)) {
   console.error('\n✗ Нет out/. Сначала: npm run build:site')
   process.exit(1)
 }
+
+/* Словарь языка рынка — чтобы увидеть в разметке английский источник там,
+   где должен стоять перевод. Читается текстом, как `routes.mjs` читает
+   локали: импорт `.ts` из `.mjs` тянет за собой снятие типов и предупреждение
+   Node на каждый прогон в CI. Словаря может не быть — набор ставится и в
+   одноязычные проекты, — и тогда семья `market` просто пуста.
+
+   Но словарь, который ЕСТЬ и не разобрался, — это ослепшая проверка,
+   выглядящая как зелёная. Разбор регуляркой держится на том, как словарь
+   набран: сменится кавычка у ключей — и сито опустеет молча, а семья
+   перестанет ловить что-либо, оставшись на нуле в базе. Поэтому пустой
+   разбор существующего словаря валит проверку, как пустой список страниц. */
+const DICT = (() => {
+  const path = join(ROOT, 'lib/dict.ts')
+  if (!existsSync(path)) return null
+  /* Только тело объекта BG: комментарии и соседние объекты в сито не идут. */
+  const src = readFileSync(path, 'utf8').split(/export const BG[^{]*\{/)[1]?.split(/\n\}/)[0] ?? ''
+  const out = {}
+  const pair = /(?:'((?:[^'\\]|\\.)*)'|([A-Za-z_$][\w$]*))\s*:\s*(?:\/\*[\s\S]*?\*\/\s*)?'((?:[^'\\]|\\.)*)'/g
+  for (const m of src.matchAll(pair)) out[(m[1] ?? m[2]).replace(/\\'/g, "'")] = m[3].replace(/\\'/g, "'")
+  if (Object.keys(out).length < 50) {
+    console.error(`\n✗ ${relative(ROOT, path)} есть, а разобрать из него удалось ${Object.keys(out).length} пар.`)
+    console.error('  Семья market мерит английский в разметке словарём; пустое сито — сломанный')
+    console.error('  разбор, а не отсутствие дефектов. Починить регулярку в tools/check-seo.mjs.')
+    process.exit(1)
+  }
+  return out
+})()
 
 /* ── страницы: `out/bg/cart.html` → `/bg/cart` ──────────────────────────── */
 const pages = new Map()
@@ -103,7 +131,46 @@ const local = (href) => {
 const PLACEHOLDER = /\[[A-Z][A-Z _]{2,}\]/g
 const CODE = /^(x-default|[a-z]{2,3}(-[A-Za-z]{4})?(-[A-Z]{2})?)$/
 
-const found = { lang: [], title: [], description: [], canonical: [], hreflang: [], viewport: [], og: [], ld: [], alt: [], sample: [], robots: [] }
+const found = {
+  lang: [], title: [], description: [], canonical: [], hreflang: [], viewport: [], og: [],
+  ld: [], alt: [], sample: [], robots: [], market: [], faqPage: [],
+}
+
+/* ── сито для семьи `market` ───────────────────────────────────────────────
+ *
+ * Правило заказчика: основные страницы — на языке рынка, и в поиск они
+ * уходят на нём же. Значит на странице языка рынка английского источника в
+ * машинном тексте быть не может: если он там, перевод не сработал.
+ *
+ * Сито — сам словарь: ключи, у которых перевод ОТЛИЧАЕТСЯ от источника.
+ * Ключ, переведённый сам в себя («5%», «CBD»), ничего не доказывает. Коротким
+ * ключам веры нет по другой причине: «ml» и «mg» стоят в болгарском тексте
+ * законно, цифры и единицы в обоих языках одни.
+ *
+ * Длинные ключи проверяются раньше коротких: находка печатается одна на
+ * строку, и пусть это будет самое длинное совпадение — по нему видно место. */
+const LEAK = Object.entries(DICT ?? {})
+  .filter(([en, bg]) => en !== bg && /[A-Za-z]{3}/.test(en) && en.length >= 5)
+  .map(([en]) => en)
+  .sort((a, b) => b.length - a.length)
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/* Границей слова служит не `\b`: дефис и подчёркивание внутри имени — часть
+   слова, а `\b` рвёт их и даёт совпадение в середине чужого слова. */
+const leakIn = (text) => LEAK.find((en) => new RegExp(`(^|[^\\w-])${escRe(en)}($|[^\\w-])`).test(text))
+
+/** Человекочитаемые строки из разметки: имя, описание, значение свойства.
+    Адреса, идентификаторы и снимки не переводятся и потому не считаются. */
+const TEXT_KEYS = new Set(['name', 'description', 'headline', 'alternateName', 'caption', 'text', 'value'])
+const ldStrings = (node, out = []) => {
+  if (Array.isArray(node)) { for (const x of node) ldStrings(x, out); return out }
+  if (node && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) {
+      if (TEXT_KEYS.has(k) && typeof v === 'string') out.push(v)
+      else ldStrings(v, out)
+    }
+  }
+  return out
+}
 
 /* ── сайт целиком ──────────────────────────────────────────────────────── */
 const robotsPath = join(OUT, 'robots.txt')
@@ -134,6 +201,10 @@ for (const [url, path] of [...pages].sort()) {
     og: { title: prop('og:title') ?? '', description: prop('og:description') ?? '' },
     lds: [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]),
     imgs: tags(html, 'img'),
+    /* Сколько вопросов НАРИСОВАНО. Сравнивается с числом вопросов в
+       разметке: расхождение значит, что кто-то вернул `.slice()` в компонент
+       и страница обещает поиску ответы, которых на ней нет. */
+    details: (html.match(/<details\b/gi) ?? []).length,
   })
 }
 
@@ -189,6 +260,30 @@ for (const [url, p] of info) {
     }
   }
 
+  /* ── FAQPage: одна на страницу, и обещает ровно то, что нарисовано ──────
+   *
+   * Две `FAQPage` на одной странице противоречат друг другу, а не отвечают
+   * дважды. А число вопросов в разметке обязано совпадать с числом
+   * нарисованных: `.slice(0, 5)` в компоненте выглядит на экране так же, как
+   * скрытие лишних таблицей стилей, — и вычёркивает половину ответов из HTML,
+   * оставив их в разметке. Дефект, за который заплачено у соседей: страница
+   * обещала поиску текст, которого на ней нет. */
+  {
+    const faqs = []
+    for (const text of p.lds) {
+      let data
+      try { data = JSON.parse(text) } catch { continue }
+      for (const n of (Array.isArray(data) ? data : data['@graph'] ?? [data])) {
+        if (n && n['@type'] === 'FAQPage') faqs.push(n)
+      }
+    }
+    if (faqs.length > 1) found.faqPage.push(`${url} — FAQPage на странице ${faqs.length}, нужна одна`)
+    const asked = faqs.reduce((n, f) => n + (f.mainEntity?.length ?? 0), 0)
+    if (faqs.length && asked !== p.details) {
+      found.faqPage.push(`${url} — в разметке вопросов ${asked}, в разметке страницы <details> ${p.details}`)
+    }
+  }
+
   for (const [i, text] of p.lds.entries()) {
     let data
     try { data = JSON.parse(text) } catch (e) {
@@ -211,6 +306,26 @@ for (const [url, p] of info) {
   for (const [what, text] of [['title', p.title], ['description', p.description], ['og', p.og.title + ' ' + p.og.description], ['JSON-LD', p.lds.join(' ')]]) {
     const hits = [...new Set(text.match(PLACEHOLDER) ?? [])]
     if (hits.length) found.sample.push(`${url} — заглушка в ${what}: ${hits.join(', ')}`)
+  }
+
+  /* Страница языка рынка говорит машине на языке рынка. Перевод применяется
+     на сборке и по ключу целиком — а склеенная строка ключом не бывает и
+     уезжает в выдачу как есть, молча. Глазом этого не увидеть: на странице
+     стоит перевод, и только в отданном файле разметка говорит по-английски. */
+  if (LEAK.length && lang === DEFAULT_LANG && !p.noindex) {
+    const machine = [
+      ['title', p.title], ['description', p.description],
+      ['og:title', p.og.title], ['og:description', p.og.description],
+      ...p.lds.flatMap((t) => {
+        let data
+        try { data = JSON.parse(t) } catch { return [] }
+        return ldStrings(data).map((x) => ['JSON-LD', x])
+      }),
+    ]
+    for (const [what, text] of machine) {
+      const en = text && leakIn(text)
+      if (en) found.market.push(`${url} — ${what} по-английски: «${en}» в «${text.slice(0, 70)}»`)
+    }
   }
 }
 
@@ -235,6 +350,8 @@ const NAMES = {
   alt: '<img> без alt (пустой alt — это тоже ответ)',
   sample: 'заглушка в том, что читает машина: title, description, og, JSON-LD',
   robots: 'robots.txt / sitemap.xml не собраны или не связаны',
+  faqPage: 'FAQPage: их больше одной или обещано ответов больше, чем нарисовано',
+  market: `страница языка рынка (${DEFAULT_LANG}) отдаёт машине английский источник — перевод не сработал`,
 }
 
 const li = process.argv.indexOf('--list')

@@ -46,7 +46,7 @@
  * стало больше. Проверка, падающая с первого дня, живёт до первого «давай
  * отключим».
  *
- *   npm run build:site && npx serve out -l 8099   (или python3 -m http.server)
+ *   npm run build:site && npm run serve
  *   node tools/check-craft.mjs
  *   node tools/check-craft.mjs -- --update
  *
@@ -117,7 +117,8 @@ const ROOT = new URL('..', import.meta.url).pathname
 const measure = (phone) => {
   const out = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
                 weight: [], jump: [], name: [], heads: [], dress: [], clip: [],
-                swipe: [], stretch: [], broken: [], spill: [], focus: [], dark: [] }
+                swipe: [], stretch: [], broken: [], spill: [], focus: [], wrap: [],
+                anchor: [], dark: [] }
   const seen = new Set()
 
   const lum = (c) => {
@@ -411,7 +412,25 @@ const measure = (phone) => {
   if (phone) {
     for (const el of document.querySelectorAll('a, button, [role="button"], input, select')) {
       if (!shown(el)) continue
-      const b = el.getBoundingClientRect()
+      /* Заготовка ссылки — не цель нажатия. `<a>` без адреса ничего не
+         делает: по нему не переходят, он не берёт фокус, и мерить, попадёт
+         ли по нему палец, нечего. Мы сами их и завели — там, где страницы
+         ещё нет, — и проверка исправно требовала от них сорока четырёх
+         пикселей: пять надписей на каждой странице сайта, то есть треть
+         всего долга этой семьи была замером того, по чему не нажимают. */
+      if (el.tagName === 'A' && !el.hasAttribute('href')) continue
+      /* Квадратик и кружок выбора рисуют в семнадцать пикселей везде, и это
+         не дефект: нажимают не по нему, а по МЕТКЕ — она обёрнута вокруг и
+         отдаёт нажатие ему. Правило прямо это и требует: у метки с контролом
+         одна цель без мёртвых зон. Поэтому меряется метка, а не квадратик;
+         метки нет — тогда спрос с самого контрола. */
+      let box = el
+      if (/^(checkbox|radio)$/.test(el.getAttribute('type') ?? '')) {
+        const label = el.closest('label')
+          ?? (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`))
+        if (label) box = label
+      }
+      const b = box.getBoundingClientRect()
       /* Ссылка в тексте — это слово, а не кнопка: её размер задаёт набор, и
          требовать от неё ширину пальца значит разорвать строку. WCAG 2.5.8
          делает ровно это исключение — «inline in a sentence».
@@ -869,6 +888,127 @@ const measure = (phone) => {
     if (was && was !== document.body && was.focus) was.focus({ preventScroll: true })
   }
 
+  /* 15 · надпись контрола, сложившаяся в две строки.
+   *
+   * Кнопка, у которой подпись переехала на вторую строку, — не мелочь
+   * оформления: она выше соседних, ряд теряет общую линию, а на телефоне
+   * такая кнопка съедает высоту, которой и так нет. В файлах этого не видно
+   * никогда: в разметке надпись одна, ширины у неё там нет.
+   *
+   * Про нас это потому, что подписи живут парами: болгарская строка длиннее
+   * английской почти всегда, и ломается ровно та половина сайта, на которую
+   * смотрят реже.
+   *
+   * Меряется по ОДНОМУ узлу текста, а не по всему органу. Подпись, разбитая
+   * на два узла нарочно (знак сверху, слово снизу в нижней полосе), — это
+   * устройство контрола, а не перенос; считать её дефектом значит требовать
+   * переписать то, что сделано верно. Перенос — это когда ОДНА надпись не
+   * поместилась в свою ширину.
+   *
+   * Строчная ссылка внутри абзаца пропускается: она обязана переноситься,
+   * для того абзац и набран. */
+  {
+    const oneLabel = (node) => {
+      const r = document.createRange()
+      r.selectNodeContents(node)
+      const tops = new Set()
+      for (const b of r.getClientRects()) {
+        if (b.width < 1 || b.height < 1) continue
+        tops.add(Math.round(b.top / 4))
+      }
+      return tops.size
+    }
+    /* Орган, а не всякая ссылка. Ссылка в колонке подвала, заголовок
+       карточки и подпись поста переносятся законно — это текст, набранный в
+       свою ширину. Речь про КОНТРОЛ: у него своя оболочка — заливка или
+       рамка, — и он рассчитан на одну строку, потому что стоит в ряду с
+       соседями и держит с ними общую линию.
+       Первая редакция спрашивала всё подряд и выдала 132 находки, из них
+       настоящих — ни одной: мерилась вёрстка текста, а не подписи органов. */
+    const pill = (el, cs) => {
+      /* Карточка — не орган, хотя и нажимается: внутри у неё снимок,
+         заголовок и абзац, и её подпись переносится законно. Признак —
+         содержимое: у контрола внутри надпись и, может быть, знак. */
+      if (el.querySelector('img, picture, video, h1, h2, h3, h4, h5, h6, p')) return false
+      if (/^(BUTTON|SUMMARY)$/.test(el.tagName)) return true
+      if (el.getAttribute('role') === 'button') return true
+      const bg = cs.backgroundColor
+      const opaque = bg && !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(bg)
+      const edged = parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0
+      return opaque || edged
+    }
+    for (const el of document.querySelectorAll('button, summary, [role="button"], a')) {
+      if (!shown(el)) continue
+      const cs = getComputedStyle(el)
+      /* Строчный — значит стоит в потоке текста: это ссылка в абзаце. */
+      if (cs.display === 'inline') continue
+      if (!pill(el, cs)) continue
+      /* Нарочный перенос по символу новой строки — тоже устройство, а не
+         промах ширины. */
+      if (cs.whiteSpace === 'pre-line' || cs.whiteSpace === 'pre-wrap') continue
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const txt = (n.nodeValue || '').trim()
+        /* Одно слово перенестись не может, а длинная строка — это уже не
+           подпись органа, а заголовок карточки: ему две строки положены. */
+        if (!/\s/.test(txt) || txt.length > 28) continue
+        if (oneLabel(n) < 2) continue
+        const key = `w:${txt}`
+        if (seen.has(key)) break
+        seen.add(key)
+        out.wrap.push(`«${txt}» — подпись ${name(el)} в две строки`)
+        break
+      }
+    }
+  }
+
+  /* 16 · ссылка внутрь страницы: есть ли куда и видно ли, куда приехали.
+   *
+   * Две беды одной природы, и обе не видны в файлах.
+   *
+   * ПЕРВАЯ — цели нет. `href="#privacy"` выглядит ссылкой, ведёт в никуда:
+   * браузер никуда не прокручивает, поиск считает страницу ссылающейся на
+   * себя, скринридер объявляет ссылкой, таб на ней останавливается. Ровно
+   * те же одиннадцать ссылок в никуда, которые заказчик нашёл глазом, — но
+   * эти четыре пришли ИЗ ДАННЫХ (`lib/contacts.ts`), а не из разметки, и
+   * проверка по файлам, ищущая литерал `href="#"`, их не видела. Отсюда и
+   * семья: спрашивать надо страницу, а не файл.
+   *
+   * ВТОРАЯ — цель уезжает под шапку. Браузер ставит цель к верху окна, а
+   * верх окна занят прилипшей шапкой: покупатель приезжает на нужный
+   * раздел и видит его заголовок срезанным. Лечится `scroll-margin-top`, и
+   * он объявлен один раз в `styles/base.css` на все узлы с именем.
+   *
+   * Занятый верх берётся из геометрии САМОЙ шапки — её отступа от края и
+   * высоты в прилипшем виде, — а не из правила, которое мы же и проверяем.
+   * Нет таких величин (чужой проект, другая шапка) — меряется высотой
+   * шапки как она есть. */
+  {
+    const head = document.querySelector('header')
+    const px = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)) || 0
+    const stuck = px('--float') + px('--chrome-stuck')
+    const occupied = stuck > 0 ? stuck : (head ? head.getBoundingClientRect().height : 0)
+    for (const a of document.querySelectorAll('a[href^="#"]')) {
+      const raw = (a.getAttribute('href') || '').slice(1)
+      if (!raw) continue
+      let id = raw
+      try { id = decodeURIComponent(raw) } catch { /* кривой хэш — имя как есть */ }
+      const key = `k:${id}`
+      if (seen.has(key)) continue
+      const target = document.getElementById(id)
+      if (!target) {
+        seen.add(key)
+        out.anchor.push(`#${id} — цели с таким именем на странице нет`)
+        continue
+      }
+      if (!occupied) continue
+      const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0
+      if (margin + 1 >= occupied) continue
+      seen.add(key)
+      out.anchor.push(`#${id} — отступ ${Math.round(margin)} при занятом верхе ${Math.round(occupied)}`)
+    }
+  }
+
   return out
 }
 
@@ -897,8 +1037,8 @@ const handDark = await browser.newContext({ colorScheme: 'dark', hasTouch: true,
 let page = await desk.newPage()
 const found = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
                 weight: [], jump: [], name: [], heads: [], dress: [], clip: [],
-                swipe: [], stretch: [], broken: [], spill: [], focus: [],
-                theme: [], coarse: [] }
+                swipe: [], stretch: [], broken: [], spill: [], focus: [], wrap: [],
+                anchor: [], theme: [], coarse: [], calm: [] }
 
 /** Открыть страницу на ширине и померить.
  *
@@ -913,7 +1053,23 @@ async function visit(path, w, { finger, dark = false }) {
     const want = dark ? (finger ? handDark : deskDark) : (finger ? hand : desk)
     if (page.context() !== want) { await page.close(); page = await want.newPage() }
     await page.setViewportSize({ width: w, height: 900 })
-    await page.goto(BASE + path, { waitUntil: 'networkidle' })
+    /* Сервер, УМЕРШИЙ в середине прогона, — не программная ошибка, а
+       обстоятельство, и говорить о нём надо словами. Заведено по счёту:
+       он падал дважды. В первый раз часть страниц померилась недогруженной
+       и проверка показала находку, которой нет, — «контраст: было 0, стало
+       1», не повторившуюся ни в одном следующем прогоне. Во второй —
+       вывалила стек вызовов node посреди отчёта.
+       Сторож «это вообще страница сайта?» у проверки был, а сторожа «сервер
+       жив?» не было. */
+    try {
+      await page.goto(BASE + path, { waitUntil: 'networkidle' })
+    } catch (e) {
+      console.error(`\n✗ ${BASE}${path} не открылся: ${String(e.message).split('\n')[0]}
+    Скорее всего сервер упал посреди прогона. Поднимите заново и повторите:
+        npm run build:site && npm run serve`)
+      await browser.close()
+      process.exit(1)
+    }
     /* Замер делается после того, как ДОЕХАЛО.
        Кадр героя въезжает проявлением (`fadeIn .62s`), и подпись на нём
        в середине перехода лежит на полупрозрачной вуали: замер контраста
@@ -949,7 +1105,7 @@ async function visit(path, w, { finger, dark = false }) {
       console.error(`\n✗ ${BASE}${path} — это не страница сайта.
     Скорее всего порт занят другим сервером или сайт не собран.
     Нужен статический сервер, умеющий чистые адреса:
-        npm run build:site && npx serve out -l 8099`)
+        npm run build:site && npm run serve`)
       await browser.close()
       process.exit(1)
     }
@@ -1077,6 +1233,72 @@ for (const path of native) {
   }
 }
 
+/* ── проход четвёртый: «поменьше движения» ─────────────────────────────────
+ *
+ * В системе есть выключатель: «уменьшить движение». Его ставят не из вкуса —
+ * от движения на экране людей укачивает, буквально, до тошноты и
+ * головокружения. Сайт обязан его слушать.
+ *
+ * Сброс в `styles/base.css` гасит анимации и переходы всем подряд, и в
+ * файлах это выглядит исчерпывающе. Но сброс — это CSS, и мимо него
+ * проходит всё, что заведено иначе: движение, запущенное скриптом
+ * (`element.animate()`), переход, вписанный в разметку атрибутом, и плавная
+ * прокрутка, назначенная не стилем. Ровно так тут уже и было: плавная
+ * прокрутка переживала сброс, потому что прокрутка — не анимация и не
+ * переход; чинилось это `lib/motion.ts`.
+ *
+ * Поэтому спрашивается не файл, а СТРАНИЦА, поднятая с включённой
+ * настройкой: что на ней всё ещё движется дольше десятой доли секунды.
+ *
+ * Одна ширина и родные страницы: движение от языка не зависит, а от ширины
+ * зависит редко — и там, где зависит, это тот же самый сброс. */
+const calm = await browser.newContext({ reducedMotion: 'reduce' })
+{
+  const page = await calm.newPage()
+  await page.setViewportSize({ width: 1200, height: 900 })
+  for (const path of native) {
+    await page.goto(BASE + path, { waitUntil: 'networkidle' })
+    const lines = await page.evaluate(() => {
+      const out = []
+      const name = (el) => {
+        if (!el || !el.tagName) return '?'
+        const cls = (el.className || '').toString().trim().split(/\s+/)[0]
+        return el.tagName.toLowerCase() + (cls ? `.${cls}` : '')
+      }
+      const shown = (el) => {
+        if (!el || !el.getBoundingClientRect) return false
+        const cs = getComputedStyle(el)
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false
+        const b = el.getBoundingClientRect()
+        return b.width > 1 && b.height > 1
+      }
+      /* Длительность берётся объявленная, а не оставшаяся: спрашиваем, на
+         сколько движение заведено, а не сколько ему осталось бежать. */
+      for (const a of document.getAnimations()) {
+        const d = a.effect?.getTiming?.().duration
+        const ms = typeof d === 'number' ? d : 0
+        if (ms <= 100) continue
+        out.push(`${name(a.effect?.target)} — движение на ${Math.round(ms)}мс`)
+      }
+      const moves = /transform|opacity|all|left|top|right|bottom|width|height|inset|translate|scale|rotate/
+      for (const el of document.querySelectorAll('body *')) {
+        if (!shown(el)) continue
+        const cs = getComputedStyle(el)
+        if (!moves.test(cs.transitionProperty)) continue
+        const longest = Math.max(...cs.transitionDuration.split(',').map((v) => parseFloat(v) || 0))
+        if (longest <= 0.1) continue
+        out.push(`${name(el)} — переход на ${longest}с`)
+      }
+      if (getComputedStyle(document.documentElement).scrollBehavior === 'smooth') {
+        out.push('вся страница прокручивается плавно')
+      }
+      return out
+    })
+    for (const line of new Set(lines)) found.calm.push(`${path}  ${line}`)
+  }
+  await page.close()
+}
+
 await browser.close()
 
 found.placeholder = [...new Set(found.placeholder)]
@@ -1114,8 +1336,11 @@ const NAMES = {
   broken: 'снимок не доехал — пустое место там, где картинка',
   spill: 'элемент вылез за правый край страницы (кто именно)',
   focus: 'фокус не виден ничем — клавиатура теряет место',
+  wrap: 'подпись контрола сложилась в две строки',
+  anchor: 'ссылка внутрь страницы: цели нет или цель уедет под шапку',
   theme: 'контраст ниже порога в ТЁМНОЙ теме',
   coarse: 'цель нажатия меньше 44 при пальце на широком окне (планшет)',
+  calm: 'движение осталось при системной настройке «поменьше движения»',
 }
 
 /* `--list <семья>` печатает найденное целиком, не трогая базу: чинить проще,

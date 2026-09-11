@@ -253,7 +253,6 @@
   width:max(100%, var(--tap, 44px));height:max(100%, var(--tap, 44px));
 }
 
-.num{font-variant-numeric:tabular-nums}
 .muted{color:var(--sage-11)}
 
 /* A group label — sentence case, not capitals with tracking. */
@@ -473,15 +472,64 @@ select.input{
 .like:active{transform:scale(.9)}
 .like svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 
-/* ── счётчик: второй вид ──────────────────────────────────────────────────
-   Минус кольцом, плюс залитым. Асимметрия намеренная: направление, которое
-   продаёт, весит больше — так просил заказчик, показав образец, и так же
-   устроены счётчики там, где корзина цель страницы, а не служебный орган.
-   Геометрия остаётся общей: всё внутри считается от высоты счётчика. */
-.qty[data-look='split']{background:none;padding:0;gap:calc(var(--qty-h,54px) * .11)}
-.qty[data-look='split'] button{box-shadow:inset 0 0 0 1.5px var(--ctrl)}
-.qty[data-look='split'] button[data-up]{background:var(--pop);color:var(--on-pop);box-shadow:none}
+/* ── счётчик: четыре вида одного органа ───────────────────────────────────
+   Заказчик просил ПОКАЗАТЬ варианты знака, а не описать их. Показать —
+   значит дать их выбрать глазом на живом сайте: вид приходит атрибутом
+   `data-qty` от панели проб, как приходят сборки шапки и знак корзины.
+   Атрибут ставится до первой отрисовки, поэтому уголки и штрихи оба лежат
+   в разметке, а CSS показывает один — тот же приём, что у знака магазина с
+   двумя «i».
+
+   Вид по умолчанию — «Pill»: трио на общей подложке, кружки приходят по
+   наведению. Выбран заказчиком глазом из четырёх, и потому стоит здесь, в
+   базовом правиле, а не за атрибутом: выбор в панели живёт только в том
+   браузере, где его сделали, а витрина должна показывать выбранное всем.
+
+   Счётчик один на весь сайт: карта товара и корзина берут его отсюда, и
+   вид у них общий. Два вида одного органа на двух страницах — это не выбор,
+   а расхождение. */
+.qty{background:var(--ctrl);padding:calc(var(--qty-h,54px) * .074);gap:0}
+.qty button{box-shadow:none}
+.qty button[data-up]{background:none;color:var(--sage-11)}
 @media (hover:hover){
-  .qty[data-look='split'] button[data-up]:hover{background:var(--pop);color:var(--on-pop)}
+  .qty button:hover,
+  .qty button[data-up]:hover{background:var(--surface);color:var(--sage-12);box-shadow:var(--sh-1)}
 }
-.qty[data-look='split'] button[data-up]:active{background:var(--pop);color:var(--on-pop)}
+.qty button:active,
+.qty button[data-up]:active{background:var(--surface);color:var(--sage-12);box-shadow:var(--sh-1)}
+/* Два знака на одной кнопке: штрих и уголок. Показан один — какой, решает
+   вид счётчика. Классы названы здесь, потому что их ставит разметка. */
+.qty .stroke{display:block}
+.qty .chev{display:none}
+
+/* Ring & solid — минус кольцом, плюс залитым: направление, которое продаёт,
+   весит больше. Первый показанный вид; заказчик выбрал другой, и этот
+   остаётся в панели как выбор, а не как умолчание. */
+:global(html[data-qty='split']) .qty{
+  background:none;padding:0;gap:calc(var(--qty-h,54px) * .11);
+}
+:global(html[data-qty='split']) .qty button{box-shadow:inset 0 0 0 1.5px var(--ctrl)}
+:global(html[data-qty='split']) .qty button[data-up]{background:var(--pop);color:var(--on-pop);box-shadow:none}
+@media (hover:hover){
+  :global(html[data-qty='split']) .qty button:hover{background:var(--surface);color:var(--sage-12);box-shadow:var(--sh-1)}
+  :global(html[data-qty='split']) .qty button[data-up]:hover{background:var(--pop);color:var(--on-pop);box-shadow:none}
+}
+:global(html[data-qty='split']) .qty button:active{background:var(--surface);color:var(--sage-12)}
+:global(html[data-qty='split']) .qty button[data-up]:active{background:var(--pop);color:var(--on-pop)}
+
+/* Bare — только знаки, без оправы: самый тихий вид. Мишень остаётся той же,
+   она просто не нарисована. */
+:global(html[data-qty='bare']) .qty{background:none;padding:0;gap:calc(var(--qty-h,54px) * .06)}
+:global(html[data-qty='bare']) .qty button{box-shadow:none;color:var(--sage-11)}
+:global(html[data-qty='bare']) .qty button[data-up]{background:none;color:var(--sage-12)}
+@media (hover:hover){
+  :global(html[data-qty='bare']) .qty button:hover,
+  :global(html[data-qty='bare']) .qty button[data-up]:hover{background:var(--hover-ctrl);color:var(--sage-12);box-shadow:none}
+}
+
+/* Chevrons — уголки вместо штрихов. Читается как «листать», а не «считать»,
+   и потому стоит четвёртым: выбор за заказчиком, а не за мной. */
+:global(html[data-qty='chev']) .qty .stroke{display:none}
+:global(html[data-qty='chev']) .qty .chev{display:block}
+:global(html[data-qty='chev']) .qty button .chev{rotate:90deg}
+:global(html[data-qty='chev']) .qty button[data-up] .chev{rotate:-90deg}

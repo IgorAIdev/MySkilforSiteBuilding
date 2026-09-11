@@ -2,5 +2,9 @@
   "twice": 0,
   "longFile": 0,
   "manyHooks": 0,
-  "keep": 0
+  "keep": 0,
+  "deadLink": 0,
+  "translated": 0,
+  "glued": 0,
+  "mutSort": 0
 }

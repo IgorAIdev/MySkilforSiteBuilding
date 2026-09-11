@@ -30,6 +30,7 @@ export const SCRIPTS = {
   'check:seo': 'node tools/check-seo.mjs',
   'check:stage': 'node tools/stage.mjs --gate',
   stage: 'node tools/stage.mjs',
+  serve: 'node tools/serve.mjs',
   sweep: 'node tools/sweep.mjs',
   shade: 'node tools/shade.mjs',
   kit: 'node tools/kit.mjs',

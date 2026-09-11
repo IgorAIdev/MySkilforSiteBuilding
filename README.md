@@ -86,16 +86,20 @@ cd путь/к/клону && git add -A && git commit -m "набор из cbdin.
 Скрипты в `package.json` дописал ставщик. Осталось одно:
 
 ```
-npm i -D sharp serve wait-on && npx playwright install chromium
+npm i -D sharp wait-on && npx playwright install chromium
 ```
 
 Проверкам по странице нужен поднятый сайт и сервер, умеющий **чистые
-адреса** (`/product` → `product.html`). `python3 -m http.server` их не
-умеет: он отдаёт листинг каталога, и проверка тогда мерит листинг и молча
-зеленеет. Это уже стоило одного дня.
+адреса** (`/product` → `product.html`). Он в наборе — `tools/serve.mjs`,
+без зависимостей, повторяет боевой нгинкс. Чужие не годятся, и это проверено
+дважды: `python3 -m http.server` отдаёт листинг каталога вместо страницы, а
+`serve` из npm уводит `/bg` на `/bg/index.html`, которого у статического
+экспорта нет, и вдобавок умирает от нехватки дескрипторов посреди прогона —
+после чего проверка мерит недогруженные страницы и показывает находки,
+которых нет.
 
 ```
-npm run build && npx serve out -l 8099
+npm run build && npm run serve
 ```
 
 Путь к Playwright задаётся через `PLAYWRIGHT=`, адрес сайта — через `SITE=`.

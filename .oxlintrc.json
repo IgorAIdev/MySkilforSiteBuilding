@@ -31,6 +31,8 @@
     "jsx-a11y/label-has-associated-control": "off",
     "jsx-a11y/anchor-has-content": "off",
     "jsx-a11y/prefer-tag-over-role": "off",
-    "nextjs/no-img-element": "off"
+    "nextjs/no-img-element": "off",
+    "react/exhaustive-effect-dependencies": "off",
+    "unicorn/no-array-sort": "off"
   }
 }

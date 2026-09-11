@@ -18,6 +18,7 @@
 import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, cpSync, readdirSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { emptyCodeBaseline } from './code-families.mjs'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const OUT = resolve(process.argv[2] ?? join(ROOT, 'kit'))
@@ -32,6 +33,8 @@ const FILES = [
      привёз бы в новый проект правило, ссылающееся в пустоту, — ровно ту
      болезнь, ради которой весь набор и написан. */
   'tools/check-code.mjs',
+  /* Список семей — общий у проверки и у этой сборки. */
+  'tools/code-families.mjs',
   /* Храповик по линтеру. Едет вместе с `.oxlintrc.json`: конфиг без
      проверки и проверка без конфига одинаково бесполезны. */
   'tools/check-lint.mjs',
@@ -44,6 +47,14 @@ const FILES = [
   'tools/check-test.mjs',
   'tests/kit.test.ts',
   'tools/check-craft.mjs',
+  /* Свой статический сервер. Едет с проверками, а не ставится из npm:
+     чужой `serve` уводит `/bg` на `/bg/index.html`, которого у статического
+     экспорта нет, а `python3 -m http.server` отдаёт листинг каталога — и
+     проверка тогда мерит листинг и молча зеленеет. Сверх того, чужой
+     `serve` на прогоне отрисованной проверки умирал от нехватки дескрипторов
+     посреди дела, и находки начинали гулять между прогонами. Этот повторяет
+     `deploy/nginx.conf`, не имеет зависимостей и никуда не девается. */
+  'tools/serve.mjs',
   /* Список адресов из дерева маршрутов. Едет вместе с проверками, потому что
      без него они снова начнут перечислять страницы рукой — а рукой набранный
      список не растёт вообще. Данных нового проекта он не требует: пустой
@@ -143,7 +154,7 @@ writeFileSync(join(OUT, 'tools/css-baseline.json'),
   JSON.stringify({ fontPx: 0, spacingPx: 0, breakpoint: 0, ratioNoCap: 0, motion: 0 }, null, 2) + '\n')
 writeFileSync(join(OUT, 'tools/lint-baseline.json'), JSON.stringify({}, null, 2) + '\n')
 writeFileSync(join(OUT, 'tools/code-baseline.json'),
-  JSON.stringify({ twice: 0, longFile: 0, manyHooks: 0, keep: 0 }, null, 2) + '\n')
+  JSON.stringify(emptyCodeBaseline(), null, 2) + '\n')
 writeFileSync(join(OUT, 'tools/seo-baseline.json'),
   JSON.stringify({ lang: 0, title: 0, description: 0, canonical: 0, hreflang: 0, viewport: 0,
                    og: 0, ld: 0, alt: 0, sample: 0, robots: 0 }, null, 2) + '\n')
@@ -239,16 +250,20 @@ cd путь/к/клону && git add -A && git commit -m "набор из cbdin.
 Скрипты в \`package.json\` дописал ставщик. Осталось одно:
 
 \`\`\`
-npm i -D sharp serve wait-on && npx playwright install chromium
+npm i -D sharp wait-on && npx playwright install chromium
 \`\`\`
 
 Проверкам по странице нужен поднятый сайт и сервер, умеющий **чистые
-адреса** (\`/product\` → \`product.html\`). \`python3 -m http.server\` их не
-умеет: он отдаёт листинг каталога, и проверка тогда мерит листинг и молча
-зеленеет. Это уже стоило одного дня.
+адреса** (\`/product\` → \`product.html\`). Он в наборе — \`tools/serve.mjs\`,
+без зависимостей, повторяет боевой нгинкс. Чужие не годятся, и это проверено
+дважды: \`python3 -m http.server\` отдаёт листинг каталога вместо страницы, а
+\`serve\` из npm уводит \`/bg\` на \`/bg/index.html\`, которого у статического
+экспорта нет, и вдобавок умирает от нехватки дескрипторов посреди прогона —
+после чего проверка мерит недогруженные страницы и показывает находки,
+которых нет.
 
 \`\`\`
-npm run build && npx serve out -l 8099
+npm run build && npm run serve
 \`\`\`
 
 Путь к Playwright задаётся через \`PLAYWRIGHT=\`, адрес сайта — через \`SITE=\`.

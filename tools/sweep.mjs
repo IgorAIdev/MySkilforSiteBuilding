@@ -12,7 +12,7 @@
  * два автоматических диагноза — горизонтальное переполнение и скачки высоты
  * между соседними ширинами.
  *
- *   npm run build:site && npx serve out -l 8099     (или next dev)
+ *   npm run build:site && npm run serve            (или next dev)
  *   node tools/sweep.mjs                            вся страница целиком
  *   node tools/sweep.mjs /bg/product/zelenika-15 --fold            только первый экран
  *

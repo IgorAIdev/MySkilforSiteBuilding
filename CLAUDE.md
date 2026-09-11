@@ -110,7 +110,7 @@ npm run build
 `check:craft` и `sweep` нужен поднятый сайт и сервер, умеющий чистые адреса:
 
 ```
-npm run build && npx serve out -l 8099
+npm run build && npm run serve
 ```
 
 **Это обязательный шаг перед тем, как отдать вёрстку заказчику.** У агента

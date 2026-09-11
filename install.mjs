@@ -96,5 +96,5 @@ if (wired) {
 }
 console.log('\nДальше:')
 console.log('  npm run stage — что кладётся первым и что прогнать')
-console.log('  npm i -D sharp serve wait-on && npx playwright install chromium')
+console.log('  npm i -D sharp wait-on && npx playwright install chromium')
 console.log('  и прочитать docs/start.md — он про порядок, в котором начинать')
