@@ -13,7 +13,7 @@
 
 export const CODE_FAMILIES = [
   'twice', 'longFile', 'manyHooks', 'keep',
-  'deadLink', 'translated', 'glued', 'mutSort',
+  'deadLink', 'translated', 'glued', 'mutSort', 'jumpBack',
 ]
 
 /** Пустая база: ноль по каждой семье. На новом проекте долга нет, и первое

@@ -15,6 +15,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, relative, dirname } from 'node:path'
+import { CSS_FAMILIES } from './css-families.mjs'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const DIRS = ['app', 'components', 'styles']
@@ -54,7 +55,9 @@ function walk(dir) {
   }
 }
 
-const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], halfRole: [], nearStep: [], motion: [], inlinePx: [], zIndex: [], focusGone: [], noPress: [] }
+/* Список семей — в своём файле: его читает и эта проверка, и сборщик набора,
+   который пишет новому проекту пустую базу. Один список, два потребителя. */
+const found = Object.fromEntries(CSS_FAMILIES.map((k) => [k, []]))
 
 /* Порядок слоёв ВНУТРИ своего блока — это не спор с другими файлами: 1 и 2 у
    карточки товара говорят «подпись поверх снимка», и о шапке они ничего не

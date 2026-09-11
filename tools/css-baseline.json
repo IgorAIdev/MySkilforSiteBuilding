@@ -3,5 +3,11 @@
   "spacingPx": 0,
   "breakpoint": 0,
   "ratioNoCap": 0,
-  "motion": 0
+  "halfRole": 0,
+  "nearStep": 0,
+  "motion": 0,
+  "inlinePx": 0,
+  "zIndex": 0,
+  "focusGone": 0,
+  "noPress": 0
 }

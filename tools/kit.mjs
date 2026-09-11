@@ -19,6 +19,7 @@ import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, cpSyn
 import { join, dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { emptyCodeBaseline } from './code-families.mjs'
+import { emptyCssBaseline } from './css-families.mjs'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const OUT = resolve(process.argv[2] ?? join(ROOT, 'kit'))
@@ -35,6 +36,7 @@ const FILES = [
   'tools/check-code.mjs',
   /* Список семей — общий у проверки и у этой сборки. */
   'tools/code-families.mjs',
+  'tools/css-families.mjs',
   /* Храповик по линтеру. Едет вместе с `.oxlintrc.json`: конфиг без
      проверки и проверка без конфига одинаково бесполезны. */
   'tools/check-lint.mjs',
@@ -151,7 +153,7 @@ const { SCRIPTS } = await import(pathToFileURL(scriptsSrc).href)
 /* Базы — пустые. Ноль в каждой семье значит «новое не заводится», а это и
    есть весь смысл храповика на чистом проекте. */
 writeFileSync(join(OUT, 'tools/css-baseline.json'),
-  JSON.stringify({ fontPx: 0, spacingPx: 0, breakpoint: 0, ratioNoCap: 0, motion: 0 }, null, 2) + '\n')
+  JSON.stringify(emptyCssBaseline(), null, 2) + '\n')
 writeFileSync(join(OUT, 'tools/lint-baseline.json'), JSON.stringify({}, null, 2) + '\n')
 writeFileSync(join(OUT, 'tools/code-baseline.json'),
   JSON.stringify(emptyCodeBaseline(), null, 2) + '\n')

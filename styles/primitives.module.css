@@ -300,6 +300,59 @@
 .btnBlock{display:flex;width:100%;white-space:normal;min-width:0}
 .btn[disabled]{opacity:.45;pointer-events:none}
 
+/* ── лоток ────────────────────────────────────────────────────────────────
+   Несколько органов на одной подложке, в одном поле: жёлоб красится тоном,
+   органы лежат в нём, а тот из них, что ведёт, поднимается листом.
+
+   Приём на витрине уже был — переключатель «Cards | Table» над полкой, — но
+   жил копией внутри каталога. Заказчик показал на него как на образец:
+   «резет это ж кнопка, а не текст, оформим в едином поле с кнопкой фильтр,
+   визуально как сейчас Cards и Table». Значит это не частный вид одного
+   переключателя, а общая одежда группы, и лежать она должна здесь.
+
+   Одна ручка на весь лоток — его высота. Поле жёлоба и поля органов внутри
+   считаются от неё (правило 2: геометрия контрола — от собственной высоты).
+   Доля 0.43 — та же оптика, что у счётчика: у мелкой пилюли плечо
+   ограничено снизу боковыми пробелами самого шрифта, у крупной растёт. */
+.tray{
+  --tray-h:42px;
+  --tray-pad:3px;
+  /* Собственная высота органа: остаток лотка за вычетом его полей. */
+  --tray-cell:calc(var(--tray-h) - var(--tray-pad) * 2);
+  display:inline-flex;align-items:center;gap:2px;min-width:0;
+  block-size:var(--tray-h);padding:var(--tray-pad);
+  background:var(--ctrl);border-radius:var(--r-pill);
+}
+.tray > *{
+  display:inline-flex;align-items:center;gap:8px;min-width:0;
+  block-size:var(--tray-cell);padding-inline:calc(var(--tray-cell) * .43);
+  border-radius:var(--r-pill);white-space:nowrap;
+  font-size:var(--fs-sm);color:var(--sage-11);
+}
+/* Ведущий орган — лист поверх жёлоба: выбранная половина переключателя или
+   главная кнопка группы. Один вид на оба случая, потому что говорят они
+   одно и то же — «вот этот здесь главный». */
+.tray > :where([aria-pressed='true'], [data-lead]){
+  background:var(--surface);color:var(--sage-12);font-weight:600;box-shadow:var(--sh-1);
+}
+.tray > :where(button, a){
+  transition:background var(--hover-t) var(--ease),color var(--hover-t) var(--ease),
+              box-shadow var(--hover-t) var(--ease),transform var(--hover-t) var(--ease);
+}
+@media (hover:hover){
+  .tray > :where(button, a):not([aria-pressed='true'], [data-lead]):not(:disabled):hover{
+    background:var(--hover-ctrl);color:var(--sage-12);
+  }
+}
+.tray > :where(button, a):not(:disabled):active{transform:scale(.97)}
+/* Выключенный орган стоит на месте и молчит: по нему видно, есть ли чему
+   работать. Отклика у него нет — орган, который отвечает и не делает,
+   хуже неподвижного. */
+.tray > :disabled{opacity:.45;cursor:default}
+/* Пальцу — сорок четыре: лоток растёт целиком, а не поштучно, иначе органы
+   в нём разъедутся по высоте. */
+@media (pointer:coarse){ .tray{--tray-h:44px} }
+
 /* ── chips ────────────────────────────────────────────────────────────── */
 .chip{
   display:inline-flex;align-items:center;gap:6px;
@@ -400,7 +453,19 @@ select.input{
 @media (hover:hover){ .more:hover svg{transform:translateX(var(--nudge))} }
 .more:active svg{transform:translateX(var(--nudge))}
 
-.crumbs{font-size:var(--fs-sm);color:var(--sage-11);padding:var(--sp-5) 0 var(--sp-4)}
+/* Строка навигации над содержимым страницы. Расстояние до этого содержимого
+   объявлено ЗДЕСЬ и только здесь — на всех пяти страницах, где крошки стоят.
+
+   Заведено дефектом, который заказчик увидел на телефоне: от крошек до
+   заголовка полки зияло полсотни пикселей. Складывались трое, и ни один не
+   был виноват по отдельности: нижнее поле крошек, верхний воздух шапки
+   магазина и — на телефоне — мишень для пальца в 44px, из которой под
+   текстом оставалось ещё двенадцать. На вопрос «где это решается» было три
+   ответа, и каждый выглядел правильным в своём файле.
+
+   Теперь ответ один. Соседи снизу своего верхнего воздуха не добавляют:
+   шапка магазина ручкой `--lede-air`, карта товара — нулём сверху. */
+.crumbs{font-size:var(--fs-sm);color:var(--sage-11);padding-block:var(--sp-5)}
 @media (hover:hover){ .crumbs a:hover{color:var(--hover-ink)} }
 .crumbs a:active{color:var(--hover-ink)}
 /* Коробка объявлена, потому что заголовок внутри берёт ступень `--fs-page`,
@@ -429,9 +494,19 @@ select.input{
   .btn{min-height:44px}
 }
 
-/* Пальцу — сорок четыре. Условие тут не ширина окна, а устройство ввода. */
+/* Пальцу — сорок четыре. Условие тут не ширина окна, а устройство ввода.
+
+   Мишень растёт НАРУЖУ строки, а не раздвигает её: отрицательное поле
+   возвращает потоку высоту текста, пока палец получает свои сорок четыре.
+   Иначе мишень становится ритмом — а ритм берётся из шкалы, и цель нажатия
+   про него ничего не знает. Именно эта разница и составляла половину
+   просвета под крошками на телефоне. */
 @media (pointer:coarse){
-  .crumbs a{display:inline-flex;align-items:center;min-height:44px}
+  .crumbs a{
+    --tap:44px;
+    display:inline-flex;align-items:center;min-height:var(--tap);
+    margin-block:calc((1lh - var(--tap)) / 2);
+  }
 }
 
 /* ── метки на кадре ───────────────────────────────────────────────────────
