@@ -17,6 +17,7 @@
 
 import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, cpSync, readdirSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const OUT = resolve(process.argv[2] ?? join(ROOT, 'kit'))
@@ -26,7 +27,43 @@ const OUT = resolve(process.argv[2] ?? join(ROOT, 'kit'))
 const FILES = [
   'tools/kit.mjs',
   'tools/check-css.mjs',
+  /* Храповик по коду. Едет обязательно и вместе со своим скиллом:
+     `.claude/skills/code/` ссылается на него прямо, и набор без него
+     привёз бы в новый проект правило, ссылающееся в пустоту, — ровно ту
+     болезнь, ради которой весь набор и написан. */
+  'tools/check-code.mjs',
+  /* Храповик по линтеру. Едет вместе с `.oxlintrc.json`: конфиг без
+     проверки и проверка без конфига одинаково бесполезны. */
+  'tools/check-lint.mjs',
+  '.oxlintrc.json',
+  /* Прогон тестов и тест-образец. Едут парой и по одной причине: `node
+     --test` на папке без тестов отвечает «0 тестов, 0 упало» и выходит с
+     нулём, то есть новый проект получал бы зелёную команду, не проверяющую
+     ничего. Теперь ноль тестов — падение, а образец есть с первого дня и
+     сторожит обещания самого набора: шкалы, примитивы, имена слоёв. */
+  'tools/check-test.mjs',
+  'tests/kit.test.ts',
   'tools/check-craft.mjs',
+  /* Список адресов из дерева маршрутов. Едет вместе с проверками, потому что
+     без него они снова начнут перечислять страницы рукой — а рукой набранный
+     список не растёт вообще. Данных нового проекта он не требует: пустой
+     `lib/` для него значит «динамических сегментов ещё нет». */
+  'tools/routes.mjs',
+  'tools/check-open.mjs',
+  'tools/check-urls.mjs',
+  /* Разметка для поиска по собранному — измеримая половина чужих
+     СЕО-скиллов. Едет с первого дня, а не «к сдаче»: то, что на этапе 2
+     поймано семьёй, на этапе 5 не становится долгом. */
+  'tools/check-seo.mjs',
+  /* Этапы производства: реестр и инструмент. Ответ на «я забуду скилл к
+     финалу» — забывает сессия, а не человек, и помнит за неё файл. */
+  'tools/stages.mjs',
+  'tools/stage.mjs',
+  /* Проверка, которая запускается сама после правки файла, и хуки, которые
+     её зовут. Заведено по слову заказчика: «команд я не знаю, это должно
+     происходить автоматически». */
+  'tools/hook-after-edit.mjs',
+  '.claude/settings.json',
   'tools/sweep.mjs',
   'tools/shrink.mjs',
   'tools/shade.mjs',
@@ -91,11 +128,25 @@ copyFileSync(from('tools/kit/workflows/check.yml', '.github/workflows/check.yml'
    ничего не помня»: адрес репозитория плюс `node install.mjs .`. Клон,
    ставший папкой проекта, — не установка, а чужой origin у вашего сайта. */
 copyFileSync(from('tools/kit/install.mjs', 'install.mjs'), join(OUT, 'install.mjs'))
+/* Список команд едет рядом со ставщиком: он им и читается. В проект он
+   переезжает вместе с ним и по той же причине — чтобы `npm run kit` из
+   проекта, где заготовок `tools/kit/` нет, собрал набор заново. Пара
+   `install.mjs` + `scripts.mjs` неразделима: половина пары — сломанный
+   ввоз. */
+const scriptsSrc = from('tools/kit/scripts.mjs', 'scripts.mjs')
+copyFileSync(scriptsSrc, join(OUT, 'scripts.mjs'))
+const { SCRIPTS } = await import(pathToFileURL(scriptsSrc).href)
 
 /* Базы — пустые. Ноль в каждой семье значит «новое не заводится», а это и
    есть весь смысл храповика на чистом проекте. */
 writeFileSync(join(OUT, 'tools/css-baseline.json'),
   JSON.stringify({ fontPx: 0, spacingPx: 0, breakpoint: 0, ratioNoCap: 0, motion: 0 }, null, 2) + '\n')
+writeFileSync(join(OUT, 'tools/lint-baseline.json'), JSON.stringify({}, null, 2) + '\n')
+writeFileSync(join(OUT, 'tools/code-baseline.json'),
+  JSON.stringify({ twice: 0, longFile: 0, manyHooks: 0, keep: 0 }, null, 2) + '\n')
+writeFileSync(join(OUT, 'tools/seo-baseline.json'),
+  JSON.stringify({ lang: 0, title: 0, description: 0, canonical: 0, hreflang: 0, viewport: 0,
+                   og: 0, ld: 0, alt: 0, sample: 0, robots: 0 }, null, 2) + '\n')
 writeFileSync(join(OUT, 'tools/craft-baseline.json'),
   JSON.stringify({ placeholder: 0, measure: 0, target: 0, contrast: 0, collision: 0,
                    weight: 0, jump: 0, name: 0, heads: 0 }, null, 2) + '\n')
@@ -129,15 +180,25 @@ https://github.com/IgorAIdev/MySkilforSiteBuilding» — он склонируе
 
 | | |
 |---|---|
-| \`.claude/skills/craft/\` | свой скилл: семь запретов, три шкалы, пять примитивов, семнадцать проверок |
+| \`.claude/skills/stages/\` | этапы производства: семь ворот, диспетчер скиллов по этапам, приём чужих скиллов |
+| \`.claude/skills/craft/\` | свой скилл: восемь запретов, три шкалы, пять примитивов, двадцать четыре проверки |
 | \`.claude/skills/\` — остальное | вкус (\`taste-skill\`, \`emil-design-eng\`), движение (\`improve-animations\`), стиль (\`minimalist\`, \`brutalist\`, \`soft\`), придирчивый разбор (\`impeccable\`), \`redesign\`, \`brandkit\`, \`output\` — с лицензиями |
 | \`CLAUDE.md\` | те же правила словами — читаются раньше кода каждой сессией |
 | \`install.mjs\` | раскладывает набор в проект и дописывает скрипты |
 | \`styles/base.css\` | сброс, земля страницы, режимы переноса, кольцо фокуса |
 | \`styles/tokens.css\` | шкала размеров, шкала ритма, роли цвета, резервы под полосы |
 | \`styles/primitives.module.css\` | пять примитивов раскладки плюс общие контролы |
-| \`tools/check-css.mjs\` | храповик по файлам: размер, ритм, брейкпоинт, пропорция, пара цвета, ступени, движение |
-| \`tools/check-craft.mjs\` | храповик по отрисованной странице: десять семей, контраст и вес — по пикселям |
+| \`tools/check-lint.mjs\` + \`.oxlintrc.json\` | храповик по линтеру: oxlint с правилами React, хуков, Next и доступности |
+| \`tools/check-test.mjs\` + \`tests/kit.test.ts\` | прогон тестов, падающий на нуле тестов, и тест-образец: шкалы, примитивы, имена слоёв на месте |
+| \`tools/check-code.mjs\` | храповик по коду: одно и то же дважды, разросшийся файл, перегруженный компонент, память браузера мимо склада |
+| \`tools/check-css.mjs\` | храповик по файлам: размер, ритм, брейкпоинт, пропорция, пара цвета, ступени, движение, слои, отклик на нажатие |
+| \`tools/check-craft.mjs\` | храповик по отрисованной странице: четырнадцать семей, контраст и вес — по пикселям, обе темы, палец на планшете |
+| \`tools/routes.mjs\` | список адресов из дерева маршрутов и данных |
+| \`tools/stages.mjs\` · \`tools/stage.mjs\` | реестр этапов и \`npm run stage\`: что строится, кто работает, что ждёт; \`check:stage\` держит пройденные ворота |
+| \`.claude/settings.json\` · \`tools/hook-after-edit.mjs\` | хуки: брифинг этапа сам в начале сессии, проверка сама после каждой правки файла |
+| \`tools/check-seo.mjs\` | разметка для поиска по собранному: язык, title, description, canonical, hreflang, viewport, og, JSON-LD, alt, заглушки, robots |
+| \`tools/check-open.mjs\` | открывается ли каждая страница в разработке |
+| \`tools/check-urls.mjs\` | обещанное открывается, открытое обещано |
 | \`tools/sweep.mjs\` | съёмка на 33 ширинах от 320 до 1600 |
 | \`tools/shrink.mjs\` | варианты снимков по ширинам для статического экспорта |
 | \`tools/shade.mjs\` | яркость снимка под подписью, снятая с экрана |
@@ -152,7 +213,7 @@ https://github.com/IgorAIdev/MySkilforSiteBuilding» — он склонируе
 накопленный долг проекта окажется «прощён»:
 
 \`\`\`
-git checkout tools/css-baseline.json tools/craft-baseline.json
+git checkout tools/css-baseline.json tools/code-baseline.json tools/lint-baseline.json tools/craft-baseline.json tools/seo-baseline.json
 \`\`\`
 
 ## Где источник
@@ -204,23 +265,23 @@ npm run build && npx serve out -l 8099
 
 ## Первое, что надо сделать
 
-Прочитать \`docs/start.md\`. Он про порядок: фундамент раньше правил,
+\`npm run stage\`. В переносимом \`CLAUDE.md\` стоит строка
+\`Этап производства: **0 · Основание**\`, и инструмент печатает, что кладётся
+первым, что прогнать и что ждёт своего дня. Проверять чужой готовый сайт —
+той же строкой: поставить набор, написать \`5 · Сдача\`, запустить
+\`npm run check:stage\` — он назовёт все ворота, которые не держатся.
+
+Потом прочитать \`docs/start.md\`. Он про порядок: фундамент раньше правил,
 храповики раньше долга. Написан на восьмидесятой правке, а нужен был на
 первой.
 `)
 
 /* Скрипты дописываются в package.json проекта, если он там есть. Иначе
    печатаются, чтобы вставить руками: набор не должен молча ничего не
-   сделать и выглядеть при этом успешным. */
-const SCRIPTS = {
-  images: 'node tools/shrink.mjs',
-  typecheck: 'tsc --noEmit',
-  'check:css': 'node tools/check-css.mjs',
-  'check:craft': 'node tools/check-craft.mjs',
-  sweep: 'node tools/sweep.mjs',
-  shade: 'node tools/shade.mjs',
-  kit: 'node tools/kit.mjs',
-}
+   сделать и выглядеть при этом успешным.
+
+   Список один на сборщик и ставщик — `tools/kit/scripts.mjs`, и почему он
+   один, написано там же. */
 const pkgPath = join(OUT, 'package.json')
 let wired = false
 if (existsSync(pkgPath)) {
@@ -230,10 +291,11 @@ if (existsSync(pkgPath)) {
   wired = true
 }
 
-console.log(`Набор собран: ${FILES.length + 6} файлов и ${kits} скиллов в ${OUT}`)
+console.log(`Набор собран: ${FILES.length + 7} файлов и ${kits} скиллов в ${OUT}`)
 console.log('  · CLAUDE.md — правила, читаются раньше кода каждой сессией')
 console.log('  · install.mjs — ставит набор в проект одной командой')
-console.log('  · .claude/skills — все скиллы: свой craft плюс вкус, движение, стиль')
+console.log('  · .claude/skills — все скиллы: свой craft, code и stages плюс вкус, движение, стиль, процесс')
+console.log('  · tools/stages.mjs + tools/stage.mjs — этапы: `npm run stage` говорит, что сейчас нужно')
 if (spare) console.log('  · заготовок tools/kit/ нет — правила взяты из корневого CLAUDE.md')
 console.log('  · .github/workflows/check.yml — проверки падают сами, без чьей-либо памяти')
 console.log('  · базы храповиков обнулены — на новом проекте долга нет')

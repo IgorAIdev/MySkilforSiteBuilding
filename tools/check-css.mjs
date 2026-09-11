@@ -14,7 +14,7 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, dirname } from 'node:path'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const DIRS = ['app', 'components', 'styles']
@@ -54,7 +54,19 @@ function walk(dir) {
   }
 }
 
-const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], halfRole: [], nearStep: [], motion: [] }
+const found = { fontPx: [], spacingPx: [], breakpoint: [], ratioNoCap: [], halfRole: [], nearStep: [], motion: [], inlinePx: [], zIndex: [], focusGone: [], noPress: [] }
+
+/* Порядок слоёв ВНУТРИ своего блока — это не спор с другими файлами: 1 и 2 у
+   карточки товара говорят «подпись поверх снимка», и о шапке они ничего не
+   утверждают. Спор начинается там, где число претендует на место в очереди
+   ВСЕЙ страницы.
+
+   Граница — однозначное число. Она не про величину, а про намерение: пока
+   слоёв внутри блока меньше десяти, номер читается как «выше соседа», и
+   выше него всё равно ничего своего нет. Двузначное число ставят, только
+   когда целятся выше чужого — шапки, полосы, затемнения, — а целиться в
+   чужое числом и есть запрещённое. */
+const LOCAL_LAYER = 9
 
 /* Комментарий — не код. Объяснение, ПОЧЕМУ брейкпоинт убран, само считалось
    брейкпоинтом; абзац про `padding-block: var(--sp-9)` — отступом. Режется с
@@ -262,6 +274,72 @@ for (const path of files) {
     }
   }
 
+  /* Верхний слой браузера вместо номеров.
+   *
+   * Номер получает только то, что висит на экране ВСЕГДА: шапка, нижняя
+   * полоса, помощник, всплывающее сообщение, ссылка «к содержимому». Их
+   * пять, они не открываются, порядок между ними — решение, и у каждого
+   * есть имя: `var(--layer-header)`, `var(--layer-tabbar)`, …
+   *
+   * Всё, что ОТКРЫВАЕТСЯ поверх страницы, номера не получает вовсе: его
+   * место в верхнем слое браузера — `<dialog>` с `showModal()` для окон и
+   * шторок, атрибут `popover` для меню. Что открыто последним, то и сверху;
+   * это правило браузера, и перебить его чужим числом из чужого файла
+   * нельзя.
+   *
+   * Заведено по дефекту соседнего магазина: пилюля сортировки носила
+   * `z-index: 71`, чтобы её шторка перекрыла затемнение, — и закрытая
+   * пилюля лезла поверх шторки фильтров. Число, поставленное элементу ради
+   * его СОДЕРЖИМОГО, ломает страницу всегда, потому что спорить ему
+   * приходится с числами, которых автор не видел.
+   *
+   * Верхний слой уносит с собой целый класс ошибок: Escape, возврат фокуса
+   * и затемнение (`::backdrop`) приходят от браузера, и «нажали мимо» через
+   * `closest` больше не пишется руками.
+   *
+   * Запрещать номера, не дав имён, нельзя: правило без реализации хуже
+   * отсутствующего. Имена — в `styles/tokens.css`, семья `--layer-*`. */
+  for (const m of css.matchAll(/(?<![-a-z])z-index\s*:\s*([^;}]+)/g)) {
+    const v = m[1].trim()
+    if (/var\(--layer-/.test(v)) continue
+    if (/^(auto|inherit|initial|unset|revert)$/.test(v)) continue
+    const n = Number(v)
+    if (Number.isFinite(n) && Math.abs(n) <= LOCAL_LAYER) continue
+    add('zIndex', `${at(m.index)}  z-index:${v} — имя из --layer-* или верхний слой`)
+  }
+
+  /* Нажатие обязано отвечать — на телефоне это единственный отклик.
+   *
+   * Наведение на телефоне не бывает: `@media (hover:hover)` его туда и не
+   * пускает, и это правильно. Серую рамку, которую Android рисовал поверх
+   * нажатого, мы сняли (`-webkit-tap-highlight-color` в `styles/base.css`):
+   * она не знает ни формы предмета, ни его цвета и держится ещё долю
+   * секунды после того, как палец ушёл.
+   *
+   * Снять чужой отклик можно только вместе со своим. Контрол, у которого
+   * объявлено `:hover` и не объявлено ничего для нажатого состояния, на
+   * телефоне теперь не отвечает ВОВСЕ: наведения нет, рамки нет, своего нет.
+   *
+   * Отклик засчитывается трёх видов, и все три — видимая перемена в момент
+   * нажатия: `:active`, состояние из `aria-` (переключатель показывает
+   * собственное новое положение) и состояние из `data-`. */
+  const answers = (sel) => {
+    if (!sel) return false
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(esc + '(?::active|\\[aria-|\\[data-)').test(css)
+  }
+  for (const m of css.matchAll(/([.#][^{},@]*?):hover/g)) {
+    const raw = m[1].trim()
+    if (!raw || raw.startsWith('@')) continue
+    /* Спрашивается дважды. Сперва про сам селектор — так найдётся пара
+       `.wrap[data-faq='sheet'] .item:hover` / `… .item:active`. Потом про
+       него же без состояний: `.sw[aria-checked='true']` — это переключатель
+       во включённом положении, а отвечает на нажатие переключатель, и
+       отвечает он сменой того самого состояния. */
+    if (answers(raw) || answers(raw.replace(/\[[^\]]*\]/g, '').trim())) continue
+    add('noPress', `${at(m.index)}  ${raw} — есть :hover, нет отклика на нажатие`)
+  }
+
   /* Пропорция без потолка: ищем блок, в котором есть aspect-ratio, и
      смотрим, есть ли в нём же ограничение высоты. */
   for (const m of css.matchAll(/aspect-ratio:/g)) {
@@ -361,6 +439,43 @@ for (const file of files) {
   for (const m of css.matchAll(/(?<![-a-z])(?:transition|animation)[a-z-]*\s*:\s*([^;}]*\bease-in\b(?!-out)[^;}]*)/g)) {
     found.motion.push(`${at(m.index)}  ease-in на интерфейсе: ${m[1].trim().slice(0, 40)}`)
   }
+
+  /* ── фокус, убранный и не заменённый ────────────────────────────────────
+   *
+   * `outline:none` — самый частый способ сломать клавиатуру, и ломает он
+   * молча: мышью всё работает, дифф безупречен, а человек, который ходит по
+   * сайту табом, теряет место на странице целиком. У покупателя это не
+   * редкость: клавиатурой пользуются и те, у кого не работает рука, и те,
+   * кому просто быстрее.
+   *
+   * Убирается ПАРОЙ — ровно как чужая рамка Android у семьи `noPress`: снял
+   * кольцо браузера — обязан нарисовать своё. Само по себе `outline:none`
+   * не дефект: у нас все три случая законны — `.find input` гасит кольцо у
+   * поля, а рисует его рамкой на `.find:focus-within`, и `.sw` переносит
+   * кольцо с органа на дорожку внутри него. Дефект — когда замены нет
+   * нигде.
+   *
+   * Спрашивается по ФАЙЛУ, и это не приблизительность: модуль CSS — это один
+   * компонент, и если кольцо не нарисовано здесь, его не нарисует никто.
+   * Правило из открытого списка Vercel (Web Interface Guidelines), из той
+   * его половины, которую можно померить чтением файла. */
+  const kills = [...css.matchAll(/outline\s*:\s*(?:none|0)\b|outline-style\s*:\s*none\b|outline-width\s*:\s*0\b/g)]
+  if (kills.length) {
+    /* Замена — любая краска, назначенная В СОСТОЯНИИ ФОКУСА: своё кольцо,
+       тень-кольцо, рамка, фон. Ищем правило, у которого в селекторе есть
+       `:focus`, а в теле — чем рисовать. */
+    const paints = /(?:^|[;{\s])(outline(?:-color|-width|-style|-offset)?|box-shadow|border(?:-[a-z]+)?|background(?:-color)?|text-decoration[a-z-]*)\s*:/
+    let replaced = false
+    for (const rule of css.matchAll(/([^{}]*:focus[^{}]*)\{([^}]*)\}/g)) {
+      if (!paints.test(rule[2])) continue
+      if (/outline\s*:\s*(?:none|0)\b/.test(rule[2]) && !paints.test(rule[2].replace(/outline\s*:\s*(?:none|0)\b/g, ''))) continue
+      replaced = true
+      break
+    }
+    if (!replaced) {
+      for (const m of kills) found.focusGone.push(`${at(m.index)}  кольцо фокуса снято, замены в файле нет`)
+    }
+  }
 }
 
 /* Ступени, которые глаз не различает.
@@ -396,6 +511,255 @@ if (existsSync(LADDER)) {
   }
 }
 
+
+/* ── Разметка: числа, которых проверка не видела ──────────────────────────
+ *
+ * Обход читал только `.css`, и база честно показывала `fontPx: 0`. Ноль в
+ * базе значит «в стилях чисто», а читается как «в проекте чисто» — это
+ * ровно тот молчаливо неполный замер, который выглядит как результат.
+ *
+ * Долг лежал в разметке: `fontSize: 38` на странице «не найдено`,
+ * `fontSize: 17`, `padding: '96px 0 120px'`, `marginTop: 28` — десять мест
+ * в пяти файлах. Инлайновый стиль вдобавок СИЛЬНЕЕ любого правила в файле
+ * стилей: число в разметке накрывает кривую clamp() и отменяет всю
+ * текучесть, которую шкала обеспечивает.
+ *
+ * Панель настроек рисует саму себя и в магазин не едет — её числа не считаются.
+ */
+const CODE = []
+for (const dir of DIRS) walkCode(join(ROOT, dir))
+function walkCode(dir) {
+  if (!existsSync(dir)) return
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name)
+    if (statSync(path).isDirectory()) walkCode(path)
+    else if (/\.tsx?$/.test(name)) CODE.push(path)
+  }
+}
+
+for (const path of CODE) {
+  const rel = relative(ROOT, path)
+  if (rel.includes('studio')) continue
+  const code = strip(readFileSync(path, 'utf8').replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length)))
+  const at = (index) => `${rel}:${code.slice(0, index).split('\n').length}`
+  const seen = new Set()
+  const add = (line) => { if (!seen.has(line)) { seen.add(line); found.inlinePx.push(line) } }
+
+  for (const m of code.matchAll(/style=\{\{([\s\S]*?)\}\}/g)) {
+    const body = m[1]
+    const where = at(m.index)
+
+    /* Пользовательское свойство — механизм, а не размер: через него в
+       вёрстку уезжает то, что известно только в браузере (сдвиг пальца,
+       ширина панели). Шкалой такое не описывается. */
+    const own = body.replace(/\['--[^\]]*'[^,]*,?/g, '')
+
+    if (/\bfontSize:\s*['"]?[\d.]+/.test(own)) add(`${where} (размер)`)
+
+    for (const d of own.matchAll(/\b(padding|margin|gap|inset|top|left|right|bottom|width|height|maxWidth|minHeight)[A-Za-z]*:\s*(['"][^'"]*['"]|[\d.]+)/g)) {
+      /* Меньше 8px — оптическая доводка, шкалой не описывается (как и в
+         стилях). Считаются числа, а не выражения: `${pull}px` — величина,
+         вычисленная в браузере, и ступени у неё быть не может. */
+      const nums = [...String(d[2]).matchAll(/([\d.]+)px|^\s*([\d.]+)\s*$/g)]
+        .map((x) => Number(x[1] ?? x[2])).filter((n) => Number.isFinite(n))
+      if (nums.some((n) => n >= SPACING_FLOOR)) add(`${where} (ритм)`)
+    }
+  }
+}
+
+/* ── Две правды об одном факте ────────────────────────────────────────────
+ *
+ * Цена, оценка, партия и состав товара живут в `lib/`. Набранные ВТОРОЙ раз
+ * в компоненте, они расходятся — и расходятся молча, потому что оба числа
+ * выглядят правдоподобно.
+ *
+ * Заведено по счёту, и счёт был €30. Таблица крепостей на странице товара
+ * держала `{ id: 'zelenika-30', price: 54.00, cbd: 2000 }`, а в каталоге
+ * `zelenika-30` — это 30%, 3000 мг и €84. Кнопка показывала €54 и клала в
+ * корзину товар за €84. В диффе обе строки безупречны.
+ *
+ * Признак, видимый в файле: в одном месте стоят и идентификатор товара, и
+ * его факт. Значит факт набран рукой там, где его надо было спросить.
+ *
+ * Это НЕ храповик и не долг: разошедшиеся цены — не то, что чинят в своём
+ * темпе. Как и управляющий байт, валит сборку сразу.
+ */
+/**
+ * Набор стилей, прочитанный через клиентский компонент.
+ *
+ * `export { s as cardStyles }` в файле с 'use client' и `cardStyles.grid` в
+ * серверной странице — это `undefined`. Сборка молчит, `tsc` молчит: для
+ * серверного файла экспорт клиентского модуля не значение, а ссылка на
+ * клиента, и свойство у неё пустое. В разметку уезжает `<div>` без класса, и
+ * раскладки просто нет.
+ *
+ * Заведено по счёту, и счёт был велик. Полка «сравните с» на всех сорока
+ * страницах товара стояла БЕЗ сетки — карточки шли столбиком во всю ширину.
+ * Раздел отчёта тем же способом терял свои две колонки: текст обещал «анализ
+ * справа», а таблица всё это время была снизу. Оба дефекта уехали на прод и
+ * прожили там всё время, пока страница существует.
+ *
+ * Лечится одной строкой: набор стилей импортируется из своего же
+ * `*.module.css`, а не через компонент. CSS-модуль можно открыть из любого
+ * файла — и серверного, и клиентского.
+ *
+ * Это НЕ храповик: раскладки, которой нет, не бывает наполовину.
+ */
+const clientStyles = []
+{
+  /* Кто отдаёт наружу набор стилей, будучи клиентским. */
+  const exported = new Map()
+  for (const path of CODE) {
+    const code = readFileSync(path, 'utf8')
+    if (!/^['"]use client['"]/m.test(code)) continue
+    const locals = new Set(
+      [...code.matchAll(/import\s+(\w+)\s+from\s+'[^']+\.module\.css'/g)].map((m) => m[1]),
+    )
+    if (!locals.size) continue
+    const names = new Set()
+    for (const m of code.matchAll(/export\s*\{\s*(\w+)\s+as\s+(\w+)\s*\}/g)) {
+      if (locals.has(m[1])) names.add(m[2])
+    }
+    for (const m of code.matchAll(/export\s+const\s+(\w+)\s*=\s*(\w+)\b/g)) {
+      if (locals.has(m[2])) names.add(m[1])
+    }
+    if (names.size) exported.set(relative(ROOT, path).replace(/\.tsx?$/, ''), names)
+  }
+  /* Кто это читает, не будучи клиентским. */
+  for (const path of CODE) {
+    const rel = relative(ROOT, path)
+    if (rel.includes('studio')) continue
+    const code = readFileSync(path, 'utf8')
+    if (/^['"]use client['"]/m.test(code)) continue
+    const at = (index) => `${rel}:${code.slice(0, index).split('\n').length}`
+    for (const m of code.matchAll(/import\s*(?:\w+\s*,\s*)?\{([^}]+)\}\s*from\s*'([^']+)'/g)) {
+      const spec = m[2]
+      const from = spec.startsWith('@/')
+        ? spec.slice(2)
+        : spec.startsWith('.') ? relative(ROOT, join(dirname(path), spec)) : null
+      if (!from) continue
+      const names = exported.get(from)
+      if (!names) continue
+      for (const raw of m[1].split(',')) {
+        const name = raw.trim().split(/\s+as\s+/).pop()?.trim()
+        if (name && names.has(name)) {
+          clientStyles.push(`${at(m.index)}: ${name} из ${spec} — клиентский экспорт, на сервере это undefined`)
+        }
+      }
+    }
+  }
+}
+if (clientStyles.length) {
+  console.error('\n✗ Набор стилей, прочитанный через клиентский компонент:')
+  for (const t of clientStyles) console.error(`    ${t}`)
+  console.error('\n  Импортируйте сам *.module.css — его можно открыть из любого файла. Через')
+  console.error('  клиентский компонент свойство приходит пустым, и раскладки не будет вовсе.')
+  process.exit(1)
+}
+
+/**
+ * Класс из модуля, которого в модуле нет.
+ *
+ * `s.like` там, где правило `.like` уехало в примитивы, — это не ошибка типов
+ * и не ошибка сборки: CSS-модуль отдаёт `undefined`, оно спокойно уезжает в
+ * `className`, и в разметке остаётся строка «undefined». Вещь просто теряет
+ * весь свой набор правил. Заказчик увидит это как исчезнувшее сердце на
+ * снимке, а дифф будет безупречен.
+ *
+ * Заведено по счёту: сердце и значок скидки на карте товара ссылались на
+ * классы, только что переехавшие в примитивы. Обе вещи пропали с витрины
+ * молча, а `tsc` был зелёным — для него это `any`.
+ *
+ * Это НЕ храповик: класс, которого нет, не долг, который платят в своём
+ * темпе. Валит сборку сразу.
+ */
+const missingClass = []
+for (const path of CODE) {
+  const rel = relative(ROOT, path)
+  if (rel.includes('studio')) continue
+  const code = readFileSync(path, 'utf8')
+  /* Какие модули этот файл открыл и под какими именами. */
+  const mods = new Map()
+  for (const m of code.matchAll(/import\s+(\w+)\s+from\s+'([^']+\.module\.css)'/g)) {
+    const [, local, spec] = m
+    const file = spec.startsWith('@/') ? join(ROOT, spec.slice(2)) : join(dirname(path), spec)
+    if (!existsSync(file)) continue
+    const css = readFileSync(file, 'utf8')
+    /* Множество берётся шире, чем надо: всякое `.имя` в файле. Ошибиться в
+       сторону «класс есть» безопасно — проверка молчит; ошибиться в
+       обратную значило бы врать про исправный код. */
+    mods.set(local, { spec, names: new Set([...css.matchAll(/\.(-?[A-Za-z_][\w-]*)/g)].map((x) => x[1])) })
+  }
+  if (!mods.size) continue
+  const at = (index) => `${rel}:${code.slice(0, index).split('\n').length}`
+  for (const [local, mod] of mods) {
+    const use = new RegExp(`\\b${local}\\.([A-Za-z_][\\w]*)\\b`, 'g')
+    for (const m of code.matchAll(use)) {
+      if (mod.names.has(m[1])) continue
+      missingClass.push(`${at(m.index)}: ${local}.${m[1]} — в ${mod.spec} такого класса нет`)
+    }
+  }
+}
+if (missingClass.length) {
+  console.error('\n✗ Класс из модуля, которого в модуле нет:')
+  for (const t of missingClass) console.error(`    ${t}`)
+  console.error('\n  CSS-модуль отдаёт undefined, оно уезжает в className, и вещь теряет весь')
+  console.error('  свой набор правил молча. Ни tsc, ни сборка об этом не скажут.')
+  process.exit(1)
+}
+
+const ids = new Set()
+const families = new Set()
+/* Каталога может не быть вовсе: в проект, куда набор только что лёг,
+   `lib/products.ts` приедет не сегодня. Раньше этот же кусок читал файл
+   молча и валил всю проверку стеком вызовов на первом же запуске в новом
+   проекте — то есть набор не переживал собственной установки. Нет данных —
+   семья не мерится, и об этом сказано вслух: молчаливый ноль неотличим от
+   «всё чисто». */
+const DATA = join(ROOT, 'lib/products.ts')
+const hasData = existsSync(DATA)
+if (hasData) {
+  const data = readFileSync(DATA, 'utf8')
+  for (const m of data.matchAll(/^  \{ id:'([^']*)'/gm)) ids.add(m[1])
+  for (const m of data.matchAll(/family:'([^']*)'/g)) families.add(m[1])
+} else {
+  console.log('· две правды об одном факте: не мерилась — нет lib/products.ts')
+}
+/* Приставка марки берётся из самих данных, а не из списка в проверке: список
+   разошёлся бы с каталогом на первой новой марке. */
+const brands = new Set([...ids].map((id) => id.split('-')[0]))
+const twoTruths = []
+for (const path of CODE) {
+  const rel = relative(ROOT, path)
+  if (rel.includes('studio')) continue
+  const code = strip(readFileSync(path, 'utf8').replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length)))
+  const at = (index) => `${rel}:${code.slice(0, index).split('\n').length}`
+
+  for (const m of code.matchAll(/'([a-z][a-z0-9]*-[a-z0-9-]+)'/g)) {
+    const v = m[1]
+    if (!brands.has(v.split('-')[0])) continue
+    if (ids.has(v) || families.has(v)) continue
+    twoTruths.push(`${at(m.index)}: '${v}' — такого товара в каталоге нет`)
+  }
+
+  /* Идентификатор и факт в одном объявлении. Строка, а не файл: рядом с
+     идентификатором — это и значит «в этом же объекте». */
+  for (const line of code.split('\n').entries()) {
+    const [i, text] = line
+    const id = /id:\s*'([a-z][a-z0-9]*-[a-z0-9-]+)'/.exec(text)
+    if (!id || !brands.has(id[1].split('-')[0])) continue
+    const fact = /\b(price|cbd|rating|reviews|batch|was)\s*:/.exec(text)
+    if (fact) twoTruths.push(`${rel}:${i + 1}: ${fact[1]} товара '${id[1]}' набран рукой — в каталоге он уже есть`)
+  }
+}
+if (twoTruths.length) {
+  console.error('\n✗ Две правды об одном факте:')
+  for (const t of twoTruths) console.error(`    ${t}`)
+  console.error('\n  Факт товара живёт в lib/products.ts. Набранный второй раз, он расходится')
+  console.error('  молча: оба числа выглядят правдоподобно. Спросите его, а не набирайте.')
+  process.exit(1)
+}
+
 const counts = Object.fromEntries(Object.entries(found).map(([k, v]) => [k, v.length]))
 
 if (process.argv.includes('--update')) {
@@ -420,6 +784,10 @@ const NAMES = {
   halfRole: 'роль переопределена наполовину: знак сменили, поверхность нет',
   nearStep: 'соседние ступени шкалы ближе 8% — глаз их не различает',
   motion: 'движение: двигает раскладку, дольше 500ms или ease-in',
+  inlinePx: 'число в разметке: инлайновый стиль мимо шкалы (правила 1 и 2)',
+  zIndex: 'z-index числом: имя из --layer-* или верхний слой (<dialog>, popover)',
+  focusGone: 'кольцо фокуса снято и не заменено — клавиатура теряет место',
+  noPress: 'есть :hover, нет отклика на нажатие — на телефоне контрол молчит',
 }
 
 /* `--list [семья]` печатает сами находки. Без него долг видно числом, но

@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && node tools/stage.mjs",
+            "timeout": 30,
+            "statusMessage": "Этап производства"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && node tools/hook-after-edit.mjs",
+            "timeout": 120,
+            "statusMessage": "Проверка после правки"
+          }
+        ]
+      }
+    ]
+  }
+}

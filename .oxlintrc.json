@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "react",
+    "react-perf",
+    "nextjs",
+    "jsx-a11y",
+    "import",
+    "typescript",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "ignorePatterns": [
+    ".next/**",
+    "out/**",
+    ".sweep/**",
+    "node_modules/**"
+  ],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "react-perf/jsx-no-new-function-as-prop": "off",
+    "react-perf/jsx-no-new-object-as-prop": "off",
+    "react-perf/jsx-no-jsx-as-prop": "off",
+    "jsx-a11y/anchor-is-valid": "off",
+    "jsx-a11y/autocomplete-valid": "off",
+    "jsx-a11y/label-has-associated-control": "off",
+    "jsx-a11y/anchor-has-content": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "nextjs/no-img-element": "off"
+  }
+}

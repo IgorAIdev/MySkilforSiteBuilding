@@ -37,7 +37,13 @@ input,select,textarea{font:inherit;color:inherit}
    тот же разрыв на всех трёх ширинах. */
 h1{text-wrap:pretty}
 h1,h2,h3{font-family:var(--face-head,var(--face))}
-h2,h3{text-wrap:balance}
+/* `pretty`, а не `balance`, и это замер, а не вкус.
+   `balance` делит заголовок на строки поровну — и на узкой колонке
+   двухстрочный заголовок встаёт двумя короткими обрывками в половину
+   ширины: «CBD продукти по / категории» занимало 53% колонки при 390px.
+   Для h1 это выяснили раньше (см. примитив `lede`), и правило там же:
+   одна причина — одна правка, а не две разные для соседних уровней. */
+h2,h3{text-wrap:pretty}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:var(--sage-3);padding:1px 6px;border-radius:var(--r-xs)}
 /* Два режима переноса, и они про разное.
 
@@ -66,9 +72,50 @@ small,figcaption,button,summary{text-wrap:balance}
    they are painted from the palette. */
 ::selection{background:var(--cyan-4);color:var(--cyan-12)}
 :focus-visible{outline:2px solid var(--cyan-9);outline-offset:3px}
+
+/* Серая рамка, которую Android рисует поверх нажатой ссылки и держит ещё
+   долю секунды после того, как палец ушёл, — это отклик БРАУЗЕРА за
+   неимением нашего. Она не знает ни формы предмета (ложится прямоугольником
+   на скруглённую пилюлю и на круглую кнопку), ни его цвета, и появляется
+   поверх собственного нажатого состояния, если оно есть.
+   Убирается ПАРОЙ: снимаем чужой отклик — обязаны дать свой (`:active`).
+   Отклика нет ни у кого, кто её снял, — нажатие на телефоне перестаёт
+   отвечать вовсе, и это хуже некрасивой рамки. Вторую половину пары
+   сторожит семья `noPress` в `check:css`. */
+html{-webkit-tap-highlight-color:transparent}
 html{scrollbar-color:var(--sage-6) transparent;scrollbar-width:thin}
 input,textarea,select{caret-color:var(--cyan-11)}
 
+/* Движение по просьбе человека, а не по решению вёрстки.
+   Разбор трёх уровней и вторая половина правила (`behavior:'smooth'`,
+   назначенный скриптом) — в `lib/motion.ts`.
+
+   Здесь общий сброс, и он СЕТКА БЕЗОПАСНОСТИ, а не решение: снимает то, что
+   двигает большую часть экрана, и оставляет живым то, без чего теряется
+   смысл. Осмысленные послабления пишутся поверх, у своих блоков.
+
+   Три числа тут не произвольны, и «выключить всё» ни одно из них не значит.
+
+   `animation-duration:.01ms` вместо `animation:none`. Ноль — не то же самое,
+   что «мгновенно»: анимации, снятой целиком, НЕ БЫЛО, и `animationend` по
+   ней не придёт никогда. Обработчик, который её ждёт, повиснет — а рядом
+   такой уже есть, `transitionend` в `components/Header.tsx`. Сотая доля
+   миллисекунды кончается в том же кадре и о своём конце сообщает.
+
+   `animation-iteration-count:1` — то самое, ради чего сброс и нужен:
+   бесконечное вращение и бегущая строка иначе останутся крутиться, только
+   быстрее.
+
+   `scroll-behavior:auto` — перехват прокрутки. Он объявлен строкой выше
+   (`html{scroll-behavior:smooth}`) и до сегодняшнего дня переживал настройку
+   системы: сам сброс его не касался, потому что прокрутка — не анимация и не
+   переход. Это самый сильный вестибулярный раздражитель на странице: едет
+   ВСЁ окно. */
 @media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation:none !important;transition-duration:.01ms !important}
+  *,*::before,*::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+    scroll-behavior:auto !important;
+  }
 }

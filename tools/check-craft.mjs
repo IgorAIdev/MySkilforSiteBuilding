@@ -30,6 +30,16 @@
  *                        межсловным и межстрочным: WCAG требует, чтобы текст
  *                        не обрезался и не переполнял. Проверяется только на
  *                        узком окне, где запас меньше всего.
+ *  10. Обрезанный текст— строка, срезанная СВОИМ ЖЕ блоком: `scrollWidth`
+ *                        больше `clientWidth` там, где блок обрезает. Свип
+ *                        ловит вылезшее за экран, а срезанное собственным
+ *                        блоком не видит никто, кроме этой проверки.
+ *  11. Тёмная тема     — контраст во второй теме. Цвет объявлен через
+ *                        `light-dark()`, то есть половина его до сих пор не
+ *                        мерилась ничем.
+ *  12. Палец на планшете— цель нажатия там, где окно широкое, а указатель
+ *                        грубый: ширина решает раскладку, указатель решает
+ *                        размер цели.
  *
  * Работает храповиком, как и `check:css`: в `tools/craft-baseline.json`
  * записано, сколько нарушений сегодня; проверка падает, только если их
@@ -49,6 +59,7 @@ const { chromium } = await import(
 import { readFileSync, writeFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import sharp from 'sharp'
+import { sample, isNative } from './routes.mjs'
 
 /** Контраст по WCAG — та же формула, что и в странице; здесь она нужна
  *  второй раз, снаружи, для дна, снятого с экрана. */
@@ -65,14 +76,39 @@ const pairOf = (a, b) => {
 }
 
 const BASE = process.env.SITE ?? 'http://localhost:8099'
-const PAGES = ['/', '/catalog', '/product', '/cart', '/checkout']
+
+/* Список страниц задаёт ДЕРЕВО МАРШРУТОВ, а не рука.
+ *
+ * Рукой здесь стояло пять адресов, все болгарские. В дереве их семь форм и
+ * два языка: полка категории и страница «не найдено» не мерились ни разу, и
+ * английская половина сайта — тоже ни разу. При том что дефект «81 знак в
+ * строке» записан в скилле именно из английского текста в болгарской
+ * коробке.
+ *
+ * Список, набранный рукой, хуже неполного: он не растёт вообще. Теперь
+ * страница попадает под проверку в день, когда её завели, — см.
+ * `tools/routes.mjs`. */
+const PAGES = sample()
 /* 1200 и 900 добавлены не для полноты. Ровно в этой полосе двухколоночный
    герой держит колонку шириной с телефон при десктопном окне: заголовок в ней
    вставал четырьмя строками по четырнадцать знаков, а подпись кадра — по
    одному слову. Ни 1024, ни 1440 этого не показывали. Дефект живёт там, где
    не смотрели. */
 const WIDTHS = [390, 700, 900, 1024, 1200, 1440]
+/* Второй язык — те же ширины по краям и одна в середине. Раскладка у него
+   та же (брейкпоинты общие), меняется только длина слов, а она видна и на
+   трёх ширинах. Шесть ширин на каждый язык удвоили бы проверку, ничего к
+   ней не добавив. */
+const WIDTHS_ALT = [390, 900, 1440]
 const PHONE = 700          // ниже этой ширины цель нажатия меряется пальцем
+/* Тёмная тема: цвет от языка не зависит, поэтому меряется на одном. Две
+   ширины, узкая и широкая: вуаль над снимком режется по-разному, когда
+   меняется пропорция кадра. */
+const DARK_WIDTHS = [390, 1200]
+/* Планшет с пальцем: ширина десктопная, указатель грубый. Ровно та полоса,
+   где вёрстка, растящая цель по `max-width`, отдаёт курсорный размер
+   пальцу. */
+const COARSE_WIDTHS = [768, 1024]
 const BASELINE = new URL('./craft-baseline.json', import.meta.url).pathname
 const ROOT = new URL('..', import.meta.url).pathname
 
@@ -80,7 +116,8 @@ const ROOT = new URL('..', import.meta.url).pathname
  *  в браузер целиком и ничего оттуда не импортирует. */
 const measure = (phone) => {
   const out = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
-                weight: [], jump: [], name: [], heads: [], dress: [], dark: [] }
+                weight: [], jump: [], name: [], heads: [], dress: [], clip: [],
+                swipe: [], stretch: [], broken: [], spill: [], focus: [], dark: [] }
   const seen = new Set()
 
   const lum = (c) => {
@@ -90,14 +127,48 @@ const measure = (phone) => {
     })
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
   }
-  const rgb = (s) => {
-    const m = s.match(/-?[\d.]+/g)
-    return m ? m.slice(0, 3).map(Number) : null
+  /* Цвет ПЕРЕВОДИТ БРАУЗЕР, а не разбирает регулярка.
+   *
+   * Вычисленный стиль отдаёт не только `rgb()`. Токены, собранные через
+   * `oklch(from …)`, так и остаются `oklch(0.8 0.11 219)`, а `color-mix()`
+   * остаётся `color-mix()`. Разбор «первые три числа — это красный, зелёный
+   * и синий» брал оттуда светлоту, насыщенность и УГОЛ ТОНА и мерил контраст
+   * к выдуманному цвету.
+   *
+   * В светлой теме ошибка молчала: выдуманный цвет выходил тёмным, тёмное на
+   * светлом порог проходило, семья показывала ноль. Стоило добавить проход по
+   * тёмной теме — и та же семья выдала десять «нарушений» подряд на паре,
+   * которая на экране даёт 8:1. Признак был тот же, что всегда: находка не
+   * сходится с тем, что видно глазом.
+   *
+   * Поэтому цвет рисуется пикселем и читается обратно. Что умеет браузер, то
+   * проверка и понимает — включая то, что появится в CSS после неё. */
+  const painter = document.createElement('canvas')
+  painter.width = painter.height = 1
+  const brush = painter.getContext('2d', { willReadFrequently: true })
+  const known = new Map()
+  const parse = (s) => {
+    if (known.has(s)) return known.get(s)
+    let out = null
+    const quick = /^rgba?\(([^)]+)\)$/.exec(s)
+    if (quick) {
+      const n = quick[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+      if (n.length >= 3 && n.every(Number.isFinite)) {
+        out = [n[0], n[1], n[2], n.length > 3 ? n[3] : 1]
+      }
+    }
+    if (!out && CSS.supports('color', s)) {
+      brush.clearRect(0, 0, 1, 1)
+      brush.fillStyle = s
+      brush.fillRect(0, 0, 1, 1)
+      const d = brush.getImageData(0, 0, 1, 1).data
+      out = [d[0], d[1], d[2], d[3] / 255]
+    }
+    known.set(s, out)
+    return out
   }
-  const alpha = (s) => {
-    const m = s.match(/-?[\d.]+/g)
-    return m && m.length > 3 ? Number(m[3]) : 1
-  }
+  const rgb = (s) => { const c = parse(s); return c ? c.slice(0, 3) : null }
+  const alpha = (s) => { const c = parse(s); return c ? c[3] : 1 }
   /** Что лежит под текстом.
    *
    *  Раньше здесь искался «первый непрозрачный предок», а всё полупрозрачное
@@ -381,6 +452,35 @@ const measure = (phone) => {
     }
   }
 
+  /* 2.5 · панель, уехавшая за край, закрывается движением.
+   *
+   * Правило И8: у открытого три выхода, и все три обязательны — крестик
+   * (единственный видимый), Escape (клавиатуре; на телефоне его нет вовсе) и
+   * уход — прокрутка или свайп. Панель, выехавшая сбоку, на телефоне
+   * закрывается тем же движением, каким пришла.
+   *
+   * Признак панели — не имя класса, а поведение: она стоит на `fixed`,
+   * занимает высоту экрана и ПРИПАРКОВАНА целиком за краем по горизонтали.
+   * Так выглядит закрытая шторка и не выглядит больше ничто.
+   *
+   * Метку `data-swipe` ставит сам хук `useSwipeClose`, а не рука в разметке:
+   * поставленная рукой, она однажды окажется на панели, к которой хук не
+   * подключён. Здесь она означает «жест подключён», а не «жест обещан».
+   *
+   * Спрашивается только при грубом указателе: у мыши этого движения нет. */
+  if (phone) {
+    for (const el of document.querySelectorAll('div, aside, nav, section, dialog')) {
+      const cs = getComputedStyle(el)
+      if (cs.position !== 'fixed') continue
+      const b = el.getBoundingClientRect()
+      const parked = b.right <= 1 || b.left >= innerWidth - 1
+      if (!parked) continue
+      if (b.width < 200 || b.height < innerHeight * 0.5) continue
+      if (el.hasAttribute('data-swipe')) continue
+      out.swipe.push(`${name(el)} — панель за краем экрана без закрытия движением`)
+    }
+  }
+
   /* 3 · контраст */
   for (const el of document.querySelectorAll('h1,h2,h3,h4,p,a,span,b,small,li,button,label,td,th')) {
     if (!shown(el)) continue
@@ -561,6 +661,214 @@ const measure = (phone) => {
     out.dress.push(`одежд у выхода из блока: ${dresses.length} (${dresses.join(', ')}) — должна быть одна`)
   }
 
+  /* 10 · обрезанный текст.
+   *
+   * Та же беда, что вылезший за экран, — разница лишь в том, КТО его прячет.
+   * Свип ловит переполнение страницы; текст, срезанный собственным блоком, не
+   * видит никто: страница выглядит опрятной, слово просто короче, чем должно
+   * быть.
+   *
+   * Дефекты соседнего магазина, оба из этой семьи: `nowrap` на заголовке
+   * подвала значит «эта строка не переносится НИКОГДА», а не «на широкой она
+   * в одну строку» — на 375 он стоил половины слова. И «20% CBD+CBN» браузер
+   * не рвёт: плюс держит то, что за ним, и карточка обрезает последнюю
+   * букву. Там, где в названии есть `+` или `/`, ставится `<wbr>`.
+   *
+   * Считается только НАСТОЯЩАЯ обрезка: блок обрезает (`hidden`/`clip`), а
+   * содержимое шире него. Полоса с прокруткой (`auto`, `scroll`) не в счёт —
+   * она для того и сделана, чтобы содержимое было шире. */
+  for (const el of document.querySelectorAll(
+    'h1,h2,h3,h4,h5,h6,p,a,span,b,strong,small,li,td,th,label,button,figcaption')) {
+    if (!shown(el)) continue
+    const own = Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim())
+    if (!own) continue
+    const cs = getComputedStyle(el)
+    if (!/^(hidden|clip)$/.test(cs.overflowX)) continue
+    const cut = el.scrollWidth - el.clientWidth
+    /* Порог в два пикселя — на дробную ширину: строка, кончающаяся на
+       половине пикселя, обрезанной не считается. */
+    if (cut > 2) out.clip.push(`${name(el)} — срезано ${Math.round(cut)}px (${cs.whiteSpace})`)
+  }
+
+  /* 11 · растянутый снимок.
+   *
+   * Семья `weight` спрашивает, сколько пикселей отдано; эта — какой они
+   * ФОРМЫ. `object-fit` по умолчанию `fill`: коробке назначили и ширину, и
+   * высоту, и снимок послушно лёг в чужую пропорцию — лица вытягиваются,
+   * круглая банка становится овальной, и всё это выглядит дёшево ровно так,
+   * как выглядит дешёвый магазин.
+   *
+   * В файле не видно вовсе: там законные `width`, `height` и законный
+   * снимок. Расходятся они только на странице.
+   *
+   * День, ради которого семья заведена, известен заранее: снимки придут из
+   * админки, где их кладёт человек, а не сборка. Пропорция, которую сегодня
+   * держит `tools/shrink.mjs`, завтра будет любой — и первый же портрет,
+   * положенный в квадратную плитку, растянется молча.
+   *
+   * Взято из открытого набора Frontend Visual QA (`image-aspect-mismatch`) —
+   * из той его части, которой у нас не было. */
+  for (const img of document.images) {
+    if (!shown(img) || !img.naturalWidth || !img.naturalHeight) continue
+    /* `cover`, `contain` и `scale-down` пропорцию берегут — режут или
+       вписывают. Искажает только `fill`, и только он тут и меряется. */
+    if (getComputedStyle(img).objectFit !== 'fill') continue
+    const b = img.getBoundingClientRect()
+    if (b.width < 24 || b.height < 24) continue
+    const want = img.naturalWidth / img.naturalHeight
+    const got = b.width / b.height
+    const off = Math.abs(got - want) / want
+    /* Три процента — это дробный пиксель и округление ширины колонки.
+       Меньше не видит никто; больше видно на лицах и на круглом. */
+    if (off <= 0.03) continue
+    const key = `s:${img.currentSrc}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.stretch.push(
+      `${(img.currentSrc || '?').split('/').pop()} — своя пропорция ${want.toFixed(2)}, ` +
+      `на странице ${got.toFixed(2)} (на ${Math.round(off * 100)}% мимо)`)
+  }
+
+  /* 12 · снимок не доехал.
+   *
+   * Пустая коробка на месте картинки в диффе выглядит безупречно: разметка
+   * законная, файл назван. Ломается ПУТЬ — а путь у нас вычисляется:
+   * `components/Shot.tsx` собирает `srcset` перезаписью имени
+   * (`/shots/a.jpg` → `/_r/shots/a-800.jpg`), и промах нарезки в
+   * `tools/shrink.mjs` даёт ссылку, которой нет ни в одном файле проекта.
+   * Искать её глазами негде — она существует только в собранной странице.
+   *
+   * Своя проверка видимости, а не общая: у битой картинки коробка бывает
+   * нулевой, и `shown()` её пропустит — а дефект ровно в том, что её не
+   * видно. */
+  for (const img of document.images) {
+    if (getComputedStyle(img).display === 'none') continue
+    const src = img.getAttribute('src') || img.currentSrc
+    if (!src && !img.srcset) continue
+    if (img.complete && img.naturalWidth > 0) continue
+    /* `complete` и нулевая своя ширина — файла нет или он не картинка. Это
+       дефект всегда: браузер сходил и не принёс.
+
+       А вот `complete === false` — само по себе НЕ ответ, и первый прогон
+       этой семьи выдал 418 «дефектов» ровно на этом. `loading="lazy"` ниже
+       экрана значит, что браузер картинку ещё и не просил: она не доехала
+       ПО ЗАМЫСЛУ, ради того ленивая загрузка и ставится. Спрашивать с неё
+       значит мерить не то — все 418 файлов лежали на месте и отдавались
+       двухсотым.
+
+       Поэтому «не доехал» спрашивается только с того, что человек СЕЙЧАС
+       видит: сеть уже успокоилась, анимации кончились, и пустое место в
+       видимой части — это пустое место. */
+    if (!img.complete) {
+      const b = img.getBoundingClientRect()
+      if (!(b.top < innerHeight && b.bottom > 0 && b.width > 1)) continue
+    }
+    const key = `b:${img.currentSrc || src}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.broken.push(`${(img.currentSrc || src || '?').split('/').pop()} — ${img.complete ? 'не открылся' : 'не доехал'}`)
+  }
+
+  /* 13 · кто именно вылез за край.
+   *
+   * Свип говорит, что страница шире экрана, — и не говорит, ЧЬЯ это ширина.
+   * Дальше виновника ищут руками, перебирая блоки; на 33 ширинах это самая
+   * дорогая правка из всех дешёвых.
+   *
+   * Здесь он называется по имени: самый верхний элемент, чей правый край за
+   * краем страницы, тогда как родитель ещё внутри. Ниже него всё лежит
+   * следствием, выше — причины нет.
+   *
+   * Полоса с прокруткой не в счёт: `rail` для того и сделана, чтобы
+   * содержимое было шире — оно уезжает внутрь неё, а не на страницу. */
+  {
+    const pageW = document.documentElement.clientWidth
+    /* Видимость своя: общая `shown()` требует, чтобы элемент был виден на
+       60% ширины, — а виновник переполнения ровно тем и плох, что он вдвое
+       шире экрана, и по общей мерке был бы пропущен как «его не видно». */
+    const boxed = (el) => {
+      const cs = getComputedStyle(el)
+      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) return false
+      const b = el.getBoundingClientRect()
+      return b.width > 1 && b.height > 1 && b.left < pageW
+    }
+    const railed = (el) => {
+      for (let n = el.parentElement; n && n !== document.documentElement; n = n.parentElement) {
+        if (getComputedStyle(n).overflowX !== 'visible') return true
+      }
+      return false
+    }
+    for (const el of document.querySelectorAll('body *')) {
+      if (!boxed(el)) continue
+      const b = el.getBoundingClientRect()
+      if (b.right <= pageW + 1) continue
+      if (railed(el)) continue
+      const host = el.parentElement
+      if (host && host !== document.body && host.getBoundingClientRect().right > pageW + 1) continue
+      const key = `o:${name(el)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.spill.push(`${name(el)} — за правым краем на ${Math.round(b.right - pageW)}px`)
+    }
+  }
+
+  /* 14 · фокус, которого не видно.
+   *
+   * `outline:none` без замены ломает клавиатуру молча: мышью всё работает,
+   * дифф безупречен, а человек, идущий по сайту табом, теряет место на
+   * странице целиком. В файлах это ловит семья `focusGone` в `check:css`;
+   * здесь — с другой стороны, и она ловит то, чего в файлах не видно:
+   * кольцо назначено, но срезано обрезкой соседа, закрыто липкой шапкой или
+   * перекрашено родителем в цвет фона.
+   *
+   * Меряется сравнением органа С САМИМ СОБОЙ: слепок обводки, тени, рамки,
+   * фона и краски — своих и ближайших потомков, потому что кольцо часто
+   * рисуют на дорожке внутри органа, а не на нём самом (`.sw` у
+   * переключателя темы, `.search` у поиска). Ничего не изменилось — фокуса
+   * не видно.
+   *
+   * Порог в сорок органов на страницу: дальше начинаются повторы одного и
+   * того же — карточки каталога, пункты полки, — а стоит проверка времени. */
+  {
+    const ring = (el) => {
+      const parts = []
+      for (const n of [el, ...el.querySelectorAll('*')].slice(0, 10)) {
+        const cs = getComputedStyle(n)
+        parts.push(cs.outlineStyle, cs.outlineWidth, cs.outlineColor, cs.outlineOffset,
+                   cs.boxShadow, cs.borderColor, cs.borderWidth,
+                   cs.backgroundColor, cs.backgroundImage, cs.color, cs.textDecorationLine)
+        for (const pseudo of ['::before', '::after']) {
+          const ps = getComputedStyle(n, pseudo)
+          parts.push(ps.content, ps.boxShadow, ps.backgroundColor, ps.outlineStyle,
+                     ps.opacity, ps.transform, ps.width, ps.height)
+        }
+      }
+      return parts.join('|')
+    }
+    const was = document.activeElement
+    let n = 0
+    for (const el of document.querySelectorAll(
+      'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')) {
+      if (n >= 40) break
+      if (!shown(el) || el.disabled) continue
+      const before = ring(el)
+      el.focus({ preventScroll: true })
+      /* Не принял фокус — не орган для клавиатуры, и спрашивать с него
+         кольцо не о чем: это отдельный дефект и отдельная семья. */
+      if (document.activeElement !== el) continue
+      n++
+      if (ring(el) !== before) continue
+      const key = `f:${name(el)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.focus.push(`${name(el)} — фокус не виден ничем`)
+    }
+    /* Вернуть страницу как была: следом её снимают, и открытая по фокусу
+       ссылка «к содержимому» испортила бы снимок. */
+    if (document.activeElement && document.activeElement !== was) document.activeElement.blur()
+    if (was && was !== document.body && was.focus) was.focus({ preventScroll: true })
+  }
+
   return out
 }
 
@@ -578,20 +886,55 @@ const desk = await browser.newContext()
    секунд превращалась в пять минут. Мерить контраст двойная плотность не
    помогает — цвет тот же. */
 const hand = await browser.newContext({ hasTouch: true, isMobile: true, deviceScaleFactor: 1 })
+/* Тема — тоже свойство контекста, и второй темы у проверки не было вовсе.
+   Весь цвет объявлен через `light-dark()`: половина его не мерилась ничем.
+   Соседний магазин заплатил за это подписями плиток — фон из палитры, текст
+   из роли темы: в светлой всё верно, в тёмной 1.12 при норме 4.5, то есть
+   слов не видно совсем. Пара выглядит правильной в той теме, в которой её
+   написали, и пропадает в соседней. */
+const deskDark = await browser.newContext({ colorScheme: 'dark' })
+const handDark = await browser.newContext({ colorScheme: 'dark', hasTouch: true, isMobile: true, deviceScaleFactor: 1 })
 let page = await desk.newPage()
 const found = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
-                weight: [], jump: [], name: [], heads: [], dress: [] }
+                weight: [], jump: [], name: [], heads: [], dress: [], clip: [],
+                swipe: [], stretch: [], broken: [], spill: [], focus: [],
+                theme: [], coarse: [] }
 
-for (const path of PAGES) {
-  for (const w of WIDTHS) {
-    const phone = w < PHONE
+/** Открыть страницу на ширине и померить.
+ *
+ *  `finger` — грубый указатель: телефон ИЛИ планшет с сенсором. Ширина
+ *  решает раскладку, указатель решает размер цели — это два разных вопроса,
+ *  и задавать второй через первый нельзя.
+ *  `dark` — вторая тема. */
+async function visit(path, w, { finger, dark = false }) {
+    const phone = finger
     /* Страница берётся из той среды, которую изображаем: сменить
-       `hasTouch` у живой страницы нельзя, это свойство контекста. */
-    const want = phone ? hand : desk
+       `hasTouch` или тему у живой страницы нельзя, это свойства контекста. */
+    const want = dark ? (finger ? handDark : deskDark) : (finger ? hand : desk)
     if (page.context() !== want) { await page.close(); page = await want.newPage() }
     await page.setViewportSize({ width: w, height: 900 })
     await page.goto(BASE + path, { waitUntil: 'networkidle' })
+    /* Замер делается после того, как ДОЕХАЛО.
+       Кадр героя въезжает проявлением (`fadeIn .62s`), и подпись на нём
+       в середине перехода лежит на полупрозрачной вуали: замер контраста
+       ловил 1.17:1 там, где на остановившейся странице 4.8. Признак был
+       тот же, что всегда, — находка гуляла между прогонами по страницам и
+       ширинам. Ждём, пока кончатся все анимации, а не выдуманное число
+       миллисекунд. */
+    await page.evaluate(() => Promise.all(
+      document.getAnimations().map((a) => a.finished.catch(() => {})),
+    )).catch(() => {})
     await page.waitForTimeout(150)
+
+    /* Кольцо фокуса рисуется по `:focus-visible`, а он у браузера зависит от
+       того, ЧЕМ в последний раз пользовались: после мыши кольца нет и быть
+       не должно — иначе оно вспыхивает на каждом нажатии. Одно нажатие Tab
+       переводит страницу в «работают с клавиатуры», и дальше программный
+       `focus()` кольцо получает ровно так же, как получил бы человек.
+       Без этой строки семья `focus` показывала бы нарушением каждый орган
+       на сайте — то есть мерила бы не то. */
+    await page.keyboard.press('Tab')
+    await page.evaluate(() => document.activeElement?.blur())
 
     /* Убедиться, что открылся САЙТ, а не что-то другое на том же порту.
        Дефект, из-за которого проверка заведена: на 8099 висел
@@ -683,19 +1026,57 @@ for (const path of PAGES) {
       }
     }
     delete r.dark
+    return r
+}
 
-    for (const k of Object.keys(r)) {
-      for (const line of r[k]) {
-        /* Заглушка — про НАПОЛНЕНИЕ, а не про ширину: `[NAME]` под отзывом
-           один и тот же на всех шести ширинах, и это одно место, а не шесть
-           дефектов. Считать её на каждой ширине значит мерить не то — та же
-           ошибка, что и «одно объявление столько раз, сколько в нём чисел».
-           Остальные семьи от ширины зависят, и там повтор законен. */
-        found[k].push(k === 'placeholder' ? `${path}  ${line}` : `${path} @${w}  ${line}`)
-      }
+/** Разложить находки по семьям. */
+const keep = (path, w, r) => {
+  for (const k of Object.keys(r)) {
+    for (const line of r[k]) {
+      /* Заглушка — про НАПОЛНЕНИЕ, а не про ширину: `[NAME]` под отзывом
+         один и тот же на всех шести ширинах, и это одно место, а не шесть
+         дефектов. Считать её на каждой ширине значит мерить не то — та же
+         ошибка, что и «одно объявление столько раз, сколько в нём чисел».
+         Остальные семьи от ширины зависят, и там повтор законен. */
+      found[k].push(k === 'placeholder' ? `${path}  ${line}` : `${path} @${w}  ${line}`)
     }
   }
 }
+
+const native = PAGES.filter(isNative)
+
+/* ── проход первый: как есть, все страницы и оба языка ─────────────────── */
+for (const path of PAGES) {
+  for (const w of isNative(path) ? WIDTHS : WIDTHS_ALT) {
+    keep(path, w, await visit(path, w, { finger: w < PHONE }))
+  }
+}
+
+/* ── проход второй: тёмная тема ────────────────────────────────────────────
+   Только контраст и только на одном языке: цвет от языка не зависит, а
+   раскладка уже померена первым проходом. Семья своя, а не общая с дневным
+   контрастом: иначе в базе не отличить «в тёмной стало хуже» от «стало хуже
+   вообще», а чинятся эти два по-разному. */
+for (const path of native) {
+  for (const w of DARK_WIDTHS) {
+    const r = await visit(path, w, { finger: w < PHONE, dark: true })
+    for (const line of r.contrast) found.theme.push(`${path} @${w} тёмная  ${line}`)
+  }
+}
+
+/* ── проход третий: палец на широком окне ──────────────────────────────────
+   Планшет в альбоме отдаёт 1024 CSS-пикселя. По ширине это десктоп — и
+   вёрстка, растящая цель нажатия по `max-width`, отдаёт ему курсорный
+   размер. Но палец у него остался пальцем: на входе палец, в разметке
+   курсор. Правило «44 пикселя» пишется в `@media (pointer: coarse)`, ровно
+   как `:hover` пишется в `@media (hover: hover)`. */
+for (const path of native) {
+  for (const w of COARSE_WIDTHS) {
+    const r = await visit(path, w, { finger: true })
+    for (const line of r.target) found.coarse.push(`${path} @${w} палец  ${line}`)
+  }
+}
+
 await browser.close()
 
 found.placeholder = [...new Set(found.placeholder)]
@@ -727,6 +1108,14 @@ const NAMES = {
   name: 'орган без имени (ни текста, ни aria-label, ни alt)',
   heads: 'лестница заголовков: пропуск уровня или не один h1',
   dress: 'одно действие в двух одеждах: выход из блока рисуется по-разному',
+  clip: 'текст, срезанный своим же блоком (nowrap, overflow:hidden)',
+  swipe: 'шторка за краем экрана не закрывается движением (правило И8)',
+  stretch: 'снимок растянут: своя пропорция не та, что на странице',
+  broken: 'снимок не доехал — пустое место там, где картинка',
+  spill: 'элемент вылез за правый край страницы (кто именно)',
+  focus: 'фокус не виден ничем — клавиатура теряет место',
+  theme: 'контраст ниже порога в ТЁМНОЙ теме',
+  coarse: 'цель нажатия меньше 44 при пальце на широком окне (планшет)',
 }
 
 /* `--list <семья>` печатает найденное целиком, не трогая базу: чинить проще,

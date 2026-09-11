@@ -14,7 +14,7 @@
  *
  *   npm run build:site && npx serve out -l 8099     (или next dev)
  *   node tools/sweep.mjs                            вся страница целиком
- *   node tools/sweep.mjs /product --fold            только первый экран
+ *   node tools/sweep.mjs /bg/product/zelenika-15 --fold            только первый экран
  *
  * Set PLAYWRIGHT= to point at a Playwright install if it is not global.
  */
@@ -25,7 +25,9 @@ const { chromium } = await import(
 import { mkdirSync, rmSync } from 'node:fs'
 
 const args = process.argv.slice(2)
-const path = args.find((a) => a.startsWith('/')) ?? '/'
+/* Умолчание — болгарская главная: у корня своего содержимого нет, он
+   перенаправляет, а свипу нужна страница. */
+const path = args.find((a) => a.startsWith('/')) ?? '/bg'
 const fold = args.includes('--fold')
 const base = process.env.SITE ?? 'http://localhost:8099'
 
@@ -34,6 +36,16 @@ const HEIGHT = 900
 /* Скачок высоты больше пятой части при шаге в 40px — это не «макет плавно
    подстроился», это что-то схлопнулось или выросло. Смотреть глазами. */
 const JUMP = 0.2
+/* Размер заголовка между соседними ширинами меняется на пиксели, а не на
+   десяток: самая крутая кривая на сайте — герой, 8.5% от колонки, то есть
+   3.4px на шаг свипа в 40px. Вдвое больше — не течение, а ступенька: так
+   заголовок магазина прыгал 45 → 56 там, где ряд складывался в столбик, и
+   заказчик показал это снимком. Ступенька размера — дефект всегда. */
+const FS_JUMP = 6
+/* Снимок под `object-fit:cover` теряет то, что не влезло в пропорцию кадра.
+   Треть — обычная цена кадрирования; больше половины — кадр стал лентой:
+   950×300 под снимком 1100×1200 оставляли 31% снимка. */
+const CROP_KEEP = 0.45
 
 const out = new URL('../.sweep', import.meta.url).pathname
 rmSync(out, { recursive: true, force: true })
@@ -50,7 +62,7 @@ for (let w = FROM; w <= TO; w += STEP) {
      метрики, и до их загрузки высота — чужая. */
   await page.evaluate(() => document.fonts.ready)
 
-  const m = await page.evaluate(() => {
+  const m = await page.evaluate((CROP_KEEP) => {
     /* Набор ломается ПОЛОСОЙ ширин, а не точкой.
      *
      * Подпись кадра рассыпалась на «CBD / oil and / cannabis / oil» в полосе
@@ -102,7 +114,31 @@ for (let w = FROM; w <= TO; w += STEP) {
         bad.push(`${label} — последняя строка «${tail}»: сирота`)
       }
     }
+    /* Размер каждого заголовка — чтобы сравнить с соседней шириной: ступенька
+       видна только между двумя снимками, а не на одном. Ключ — уровень и
+       начало текста: один и тот же заголовок на всех ширинах. */
+    const heads = {}
+    for (const el of document.querySelectorAll('main h1, main h2')) {
+      const cs = getComputedStyle(el)
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue
+      const key = `${el.tagName.toLowerCase()} «${el.textContent.trim().slice(0, 24)}»`
+      if (!(key in heads)) heads[key] = parseFloat(cs.fontSize)
+    }
+    /* Кадр под cover: сколько снимка осталось после кадрирования. */
+    const crops = []
+    for (const img of document.querySelectorAll('img')) {
+      if (getComputedStyle(img).objectFit !== 'cover' || !img.naturalWidth) continue
+      const b = img.getBoundingClientRect()
+      if (b.width < 200 || b.height < 40) continue
+      const box = b.width / b.height, nat = img.naturalWidth / img.naturalHeight
+      const keep = Math.min(box / nat, nat / box)
+      if (keep < CROP_KEEP) {
+        crops.push(`кадр ${Math.round(b.width)}×${Math.round(b.height)} (${box.toFixed(1)}:1) ` +
+          `под снимком ${img.naturalWidth}×${img.naturalHeight} оставляет ${Math.round(keep * 100)}%`)
+      }
+    }
     return {
+      heads, crops,
       scroll: document.documentElement.scrollWidth,
       inner: window.innerWidth,
       height: document.body.scrollHeight,
@@ -112,13 +148,14 @@ for (let w = FROM; w <= TO; w += STEP) {
       blocks: [...document.querySelectorAll('main > *')]
         .map((el) => Math.round(el.getBoundingClientRect().height)),
     }
-  })
+  }, CROP_KEEP)
 
   await page.screenshot({
     path: `${out}/${String(w).padStart(4, '0')}.png`,
     fullPage: !fold,
   })
-  rows.push({ w, over: m.scroll - m.inner, height: m.height, blocks: m.blocks, bad: m.bad })
+  rows.push({ w, over: m.scroll - m.inner, height: m.height, blocks: m.blocks, bad: m.bad,
+    heads: m.heads, crops: m.crops })
 }
 
 await browser.close()
@@ -137,6 +174,17 @@ for (let i = 1; i < rows.length; i++) {
     .map((h, k) => ({ k, from: h, to: b.blocks[k] ?? h }))
     .filter((x) => Math.abs(x.to - x.from) / Math.max(x.from, x.to, 1) > 0.15)
   jumps.push({ from: a.w, to: b.w, a: a.height, b: b.height, movers })
+}
+
+/* Ступенька размера: один и тот же заголовок на соседних ширинах. */
+const fsJumps = []
+for (let i = 1; i < rows.length; i++) {
+  const a = rows[i - 1], b = rows[i]
+  for (const [key, from] of Object.entries(a.heads ?? {})) {
+    const to = b.heads?.[key]
+    if (to === undefined || Math.abs(to - from) <= FS_JUMP) continue
+    fsJumps.push(`${key}: ${from.toFixed(1)} → ${to.toFixed(1)}px между ${a.w} и ${b.w}`)
+  }
 }
 
 console.log(`\n${rows.length} ширин, ${FROM}…${TO}px, снимки в .sweep/\n`)
@@ -166,6 +214,27 @@ if (bands.size) {
   bandsFailed = true
 } else {
   console.log('✓ Столбиков и сирот нет ни на одной ширине')
+}
+
+if (fsJumps.length) {
+  console.log('\n✗ Размер заголовка прыгает между соседними ширинами — ступенька, а не течение:')
+  for (const j of fsJumps) console.log(`    ${j}`)
+  bandsFailed = true
+} else {
+  console.log('✓ Заголовки текут, ступенек размера нет')
+}
+
+/* Кадр, ставший лентой. Сообщается, а не валит: снимок — наполнение, и
+   заказчик заменит его своим; но кадр, оставляющий от любого снимка треть,
+   — устройство кадра, и смотреть на него надо. */
+const crops = new Map()
+for (const r of rows) for (const c of r.crops ?? []) {
+  if (!crops.has(c)) crops.set(c, [])
+  crops.get(c).push(r.w)
+}
+if (crops.size) {
+  console.log('\n· Кадр оставляет меньше половины снимка (смотреть):')
+  for (const [what, ws] of crops) console.log(`    ${what}  — ${ws[0]}…${ws[ws.length - 1]}px`)
 }
 
 if (jumps.length) {

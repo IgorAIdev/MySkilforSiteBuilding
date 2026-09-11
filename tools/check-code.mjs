@@ -1,0 +1,282 @@
+/**
+ * Храповик по коду.
+ *
+ * Тот же приём, что у `check-css.mjs`, и та же причина. У вёрстки правило
+ * «один факт — одно место» есть с первого дня, и его сторожат одиннадцать
+ * семей. У КОДА такого правила не было вовсе — и код честно набрал ровно те
+ * же болезни, только их никто не считал.
+ *
+ * Замер, с которого проверка началась (сентябрь 2026, 86 файлов, 11 509
+ * строк):
+ *
+ *   · полоса с прокруткой написана дважды: `components/useRail.ts` — хук
+ *     ровно для этого, и `components/Rail.tsx`, который его не зовёт, а
+ *     повторяет построчно: тот же `measure`, тот же слушатель, тот же
+ *     `ResizeObserver`, тот же `nudge`;
+ *   · склад поверх localStorage написан дважды: `lib/shop.ts` (корзина и
+ *     избранное) и `lib/studio/store.ts` (ответы панели). Один приём, два
+ *     набора слушателей, два кэша, два `try/catch` — и два места, где
+ *     однажды разойдётся поведение в приватном режиме;
+ *   · «показать миллиграммы» написано ТРИЖДЫ: `components/IndexTable.tsx`,
+ *     `components/ProductCard.tsx` и `lib/oils.ts` под именем `oneDp` —
+ *     причём третья копия лежит там, где ей и место.
+ *
+ * Ни одна из трёх в диффе не видна: каждый файл по отдельности безупречен.
+ * Видно их только сложением, и складывать должна проверка.
+ *
+ *   node tools/check-code.mjs              проверить
+ *   node tools/check-code.mjs --list <семья>   показать находки
+ *   node tools/check-code.mjs --update     записать текущие числа как базу
+ */
+
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs'
+import { join, relative } from 'node:path'
+
+const ROOT = new URL('..', import.meta.url).pathname
+const DIRS = ['app', 'components', 'lib']
+const BASELINE = join(ROOT, 'tools/code-baseline.json')
+
+/* Файлы ДАННЫХ, а не кода. Длина у них — не сложность: словарь на 644 строки
+   это 644 перевода, и делить его на части значит искать перевод в двух
+   местах вместо одного. `lib/shots.ts` вдобавок пишется скриптом. */
+const DATA = [
+  'lib/dict.ts',        // словарь переводов
+  'lib/shots.ts',       // нарезка снимков, пишется tools/shrink.mjs
+  'lib/products.ts',    // каталог
+  'lib/studio/schema.ts', // описание полей панели
+  'components/Icons.tsx', // набор значков: по функции на значок
+]
+
+/** Длиннее этого файл перестаёт читаться целиком. */
+const LONG_FILE = 420
+/** Больше этого хуков в одной функции — она держит не одно состояние, а много. */
+const MANY_HOOKS = 14
+
+const files = []
+for (const dir of DIRS) walk(join(ROOT, dir))
+function walk(dir) {
+  if (!existsSync(dir)) return
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name)
+    if (statSync(path).isDirectory()) walk(path)
+    else if (/\.tsx?$/.test(name)) files.push(path)
+  }
+}
+
+const found = { twice: [], longFile: [], manyHooks: [], keep: [], deadLink: [], translated: [] }
+
+/* Комментарий — не код: длину сохраняем, чтобы номера строк не уехали.
+   Тот же приём, что в check-css.mjs, и заведён там по той же беде. */
+const strip = (t) =>
+  t.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+   .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length))
+
+/* ── семья 1: одно и то же написано дважды ─────────────────────────────────
+ *
+ * Ищутся объявления верхнего уровня — `const name = (...) => …` и
+ * `function name(...) { … }`, — и сравниваются ТЕЛА, приведённые к одному
+ * виду: пробелы схлопнуты, имена переменных оставлены как есть.
+ *
+ * Имя не сравнивается намеренно. Третья копия «показать миллиграммы»
+ * называется `oneDp`, а две первые — `mg`: по именам они не сходятся вовсе,
+ * а по телу совпадают знак в знак. Дублируется работа, а не название.
+ *
+ * Порог в 40 знаков тела — чтобы `const x = () => null` и прочие однострочные
+ * заглушки не считались открытием. */
+const BODY_MIN = 40
+const bodies = new Map()
+
+for (const path of files) {
+  const rel = relative(ROOT, path)
+  const src = strip(readFileSync(path, 'utf8'))
+  const at = (i) => `${rel}:${src.slice(0, i).split('\n').length}`
+
+  /* стрелка в одну строку: const mg = (v: number): string => (…) */
+  for (const m of src.matchAll(/^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(\([^)]*\)[^=]*=>[^\n]+)$/gm)) {
+    add(m[1], m[2], at(m.index), rel)
+  }
+  /* объявленная функция: тело до строки, закрывающей её на нулевом отступе */
+  for (const m of src.matchAll(/^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*(\([\s\S]*?)\n\}/gm)) {
+    add(m[1], m[2], at(m.index), rel)
+  }
+  /* стрелка в несколько строк: const measure = useCallback(() => { … }, []) */
+  for (const m of src.matchAll(/^ {2}const\s+([A-Za-z_$][\w$]*)\s*=\s*(useCallback\(\([^)]*\)\s*=>\s*\{[\s\S]*?\n {2}\}[^\n]*)$/gm)) {
+    add(m[1], m[2], at(m.index), rel)
+  }
+
+  function add(name, body, where, file) {
+    const key = body.replace(/\s+/g, ' ').trim()
+    if (key.length < BODY_MIN) return
+    const seen = bodies.get(key)
+    if (seen) { if (seen.file !== file) seen.also.push({ name, where }) }
+    else bodies.set(key, { name, where, file, also: [] })
+  }
+
+  /* ── семья 2: файл, который не читается целиком ─────────────────────────
+   *
+   * Не про красоту и не про вкус: файл длиннее четырёхсот строк перестаёт
+   * держаться в голове, и каждая правка в нём делается вслепую по грепу.
+   * Шапка на 758 строк держит восемь разных дел сразу — чекмедже, мега-меню,
+   * поиск, прилипание, очередь на выживание, переключатель языка, чат,
+   * значки корзины и учётки, — и ни одно из них не вынуть, не задев прочие.
+   *
+   * Данные не считаются: длина словаря — это число переводов, а не
+   * сложность. */
+  if (!DATA.includes(rel)) {
+    const lines = src.split('\n').length
+    if (lines > LONG_FILE) found.longFile.push(`${rel}  ${lines} строк (порог ${LONG_FILE})`)
+  }
+
+  /* ── семья 3: компонент, держащий слишком много состояния ───────────────
+   *
+   * Считаются вызовы хуков внутри одной функции верхнего уровня. Много
+   * хуков — это не «сложный компонент», это НЕСКОЛЬКО компонентов, ещё не
+   * разделённых. Признак чисто механический: сколько разных вещей функция
+   * помнит одновременно. */
+  for (const m of src.matchAll(/^(?:export\s+(?:default\s+)?)?function\s+([A-Z][\w$]*)\s*\([\s\S]*?\n\}/gm)) {
+    const hooks = (m[0].match(/\buse[A-Z]\w*\s*\(/g) || []).length
+    if (hooks > MANY_HOOKS) {
+      found.manyHooks.push(`${at(m.index)}  ${m[1]}() — ${hooks} хуков (порог ${MANY_HOOKS})`)
+    }
+  }
+
+  /* ── семья 4: память браузера мимо склада ──────────────────────────────
+   *
+   * `localStorage` — это состояние, которое переживает перезагрузку, то есть
+   * данные. Данные живут в складе, а склад умеет две вещи, которых нет у
+   * прямого вызова: рассказать всем подписчикам, что значение изменилось, и
+   * не упасть в приватном режиме, где `localStorage` бросает исключение.
+   *
+   * Складов в проекте два — `lib/shop.ts` (магазин) и `lib/studio/store.ts`
+   * (панель), — и это само по себе долг: приём один, копии две. Но пока их
+   * два, проверка сторожит хотя бы то, чтобы третьего не завелось.
+   *
+   * Загрузочный скрипт в `app/[lang]/layout.tsx` — исключение по существу:
+   * он читает выбор темы ДО первой отрисовки, когда никакого React ещё нет. */
+  /* ── семья 6: имя марки, отданное на перевод ──────────────────────────
+   *
+   * У сайта две языковые версии, и браузер предлагает перевести ту, что не
+   * совпала с языком гостя. Автоперевод не разбирает, что `Balkan Hemp` —
+   * имя фирмы, а не словосочетание: он его переведёт, и покупатель будет
+   * искать в магазине товар, которого под таким именем нет.
+   *
+   * `translate="no"` — то, чем это говорится браузеру, и стоит оно на том
+   * узле, который имя печатает.
+   *
+   * Спрашивается по строке: если в ней печатается `.brand`, на ней же должен
+   * стоять `translate`. Мерка грубая и своих границ не скрывает — имя,
+   * разложенное на три строки, она пропустит, — но ровно этот вид (`<span
+   * className={s.brand}>{product.brand}</span>`) в проекте и встречается.
+   *
+   * Строка, где марка уходит в строковый шаблон (`aria-label`, текст
+   * сообщения, заголовок страницы), не считается: атрибут вешать не на что,
+   * и перевод туда не доберётся. */
+  for (const m of src.matchAll(/^.*\{[^}\n]*\.brand\}.*$/gm)) {
+    const line = m[0]
+    if (/translate\s*=/.test(line)) continue
+    if (/`|aria-label|title=|alt=/.test(line)) continue
+    /* `className={s.brand}` — это ИМЯ КЛАССА, а не имя марки: так называется
+       блок со знаком магазина в подвале. Мерка на нём сработала с первого
+       прогона, и это её собственный дефект, а не находка. Считается только
+       то, что печатается в текст. */
+    if (!/\{\s*(?!s\.|p\.)[A-Za-z_$][\w$]*\.brand\s*\}/.test(line.replace(/className=\{[^}]*\}/g, ''))) continue
+    found.translated.push(`${at(m.index)}  имя марки печатается без translate="no"`)
+  }
+
+  /* ── семья 5: ссылка, обещающая адрес, которого нет ───────────────────
+   *
+   * `href="#"` — это не «ссылки нет». Это ссылка НА ВЕРХ ЭТОЙ ЖЕ СТРАНИЦЫ:
+   * нажал — уехал наверх, вернулся ни с чем. Поиск идёт по ней и считает
+   * страницу ссылающейся на себя, скринридер объявляет её ссылкой, таб
+   * останавливается на ней — и все трое обмануты одинаково.
+   *
+   * Замер, с которого семья заведена: ОДИННАДЦАТЬ таких по проекту, в шести
+   * файлах — нижняя панель, знаки шапки, оба списка информационных ссылок,
+   * подвал, условия в заказе и две кнопки протокола на карточке товара. Из
+   * них я сперва починил две, а девять не искал: заказчик показал одно место,
+   * а правило гласит — дефект чинится везде.
+   *
+   * Чем заменяется: `<a>` БЕЗ адреса. По стандарту это законная
+   * ссылка-заготовка — «здесь будет ссылка, но пока её нет»: такую не
+   * открыть, не поймать табом и не проиндексировать, а вся одежда, написанная
+   * на `a`, к ней по-прежнему применяется. Ноль обещаний и ноль изменений на
+   * вид. Появится страница — на её место встанет настоящий `<Link href=…>`.
+   *
+   * Якорь на этой же странице (`href="#lab"`, `href="#contact"`) — не дефект:
+   * он ведёт туда, где что-то есть. Спрашивается только пустой. */
+  for (const m of src.matchAll(/href\s*=\s*(?:"#"|'#'|\{\s*['"]#['"]\s*\})/g)) {
+    found.deadLink.push(`${at(m.index)}  href="#" — ссылка на верх страницы вместо адреса`)
+  }
+
+  const STORES = ['lib/shop.ts', 'lib/studio/store.ts', 'app/[lang]/layout.tsx']
+  if (!STORES.includes(rel)) {
+    for (const m of src.matchAll(/\b(?:local|session)Storage\s*\.\s*(?:get|set|remove)Item/g)) {
+      found.keep.push(`${at(m.index)}  память браузера мимо склада`)
+    }
+  }
+}
+
+for (const [, v] of bodies) {
+  if (!v.also.length) continue
+  const where = [v.where, ...v.also.map((a) => a.where)].join('  =  ')
+  const names = [...new Set([v.name, ...v.also.map((a) => a.name)])].join(' / ')
+  found.twice.push(`${names}: ${where}`)
+}
+
+const counts = Object.fromEntries(Object.entries(found).map(([k, v]) => [k, v.length]))
+
+const NAMES = {
+  twice: 'одно и то же написано дважды: тела совпадают, файлы разные',
+  longFile: `файл длиннее ${LONG_FILE} строк — целиком уже не читается`,
+  manyHooks: `функция держит больше ${MANY_HOOKS} хуков — это не один компонент, а несколько`,
+  keep: 'localStorage мимо склада: без уведомления подписчиков и без защиты от приватного режима',
+  deadLink: 'href="#" — обещает адрес, а уводит на верх страницы',
+  translated: 'имя марки без translate="no" — автоперевод браузера его перепишет',
+}
+
+if (process.argv.includes('--list')) {
+  const pick = process.argv[process.argv.indexOf('--list') + 1]
+  for (const k of found[pick] ? [pick] : Object.keys(NAMES)) {
+    console.log(`\n${NAMES[k]} — ${found[k].length}`)
+    for (const line of found[k]) console.log(`    ${line}`)
+  }
+  process.exit(0)
+}
+
+if (process.argv.includes('--update')) {
+  writeFileSync(BASELINE, JSON.stringify(counts, null, 2) + '\n')
+  console.log('База обновлена:', JSON.stringify(counts))
+  process.exit(0)
+}
+
+let base
+try {
+  base = JSON.parse(readFileSync(BASELINE, 'utf8'))
+} catch {
+  console.error(`Нет ${relative(ROOT, BASELINE)}. Создать: npm run check:code -- --update`)
+  process.exit(1)
+}
+
+let failed = false
+for (const key of Object.keys(NAMES)) {
+  const now = counts[key], was = base[key] ?? 0
+  if (now > was) {
+    failed = true
+    console.error(`\n✗ ${NAMES[key]}: было ${was}, стало ${now}`)
+    for (const line of found[key].slice(-(now - was) * 3)) console.error(`    ${line}`)
+  } else if (now < was) {
+    console.log(`✓ ${NAMES[key]}: ${was} → ${now}`)
+  } else {
+    console.log(`· ${NAMES[key]}: ${now}`)
+  }
+}
+
+if (failed) {
+  console.error('\nДолга по коду стало больше. Либо чините, либо — если это')
+  console.error('осознанное решение — обновляйте базу: npm run check:code -- --update')
+  process.exit(1)
+}
+
+const total = Object.values(counts).reduce((a, b) => a + b, 0)
+const wasTotal = Object.values(base).reduce((a, b) => a + b, 0)
+if (total < wasTotal) console.log(`\nДолг сократился: ${wasTotal} → ${total}. Обновите базу.`)
