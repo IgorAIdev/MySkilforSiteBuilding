@@ -343,6 +343,37 @@ for (const path of files) {
     add('noPress', `${at(m.index)}  ${raw} — есть :hover, нет отклика на нажатие`)
   }
 
+  /* Приклеенное без потолка от окна. Блок с `position:sticky` и смещением
+     от верха — колонка, едущая рядом с содержимым (галерея товара, сводка
+     заказа, панель фильтров), — обязан назвать потолок высоты в `dvh`:
+     приклеенное выше окна нельзя увидеть целиком никогда, его низ приходит
+     только с концом соседа. Заказчик увидел это на ноутбуке: «изображение и
+     дополнительные не помещаются в экран». Полосы у самого края (`top:0`
+     внутри своей прокрутки, `bottom:`) и слои шапки (`--layer-*`) — не
+     колонки, им нечего ограничивать. Потолок может стоять в другом правиле
+     того же селектора (в `@container`) — как у пропорции ниже. */
+  for (const m of css.matchAll(/position\s*:\s*sticky/g)) {
+    const open = css.lastIndexOf('{', m.index)
+    let depth = 1, i = open + 1
+    while (i < css.length && depth > 0) {
+      if (css[i] === '{') depth++
+      else if (css[i] === '}') depth--
+      i++
+    }
+    const block = css.slice(open, i)
+    if (!/(?:^|[;{\s])top\s*:/.test(block)) continue
+    if (/(?:^|[;{\s])top\s*:\s*0(?:px)?\s*[;}]/.test(block)) continue
+    if (/z-index\s*:\s*var\(--layer-/.test(block)) continue
+    const cut = Math.max(css.lastIndexOf('}', open - 1), css.lastIndexOf('{', open - 1))
+    const sel = css.slice(cut + 1, open).replace(/\/\*[\s\S]*?\*\//g, '').trim()
+    const capped = sel && new RegExp(
+      sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*?dvh'
+    ).test(css)
+    if (!capped && !/dvh/.test(block)) {
+      add('stickyCap', `${at(m.index)}  приклеенное без потолка от окна (dvh)`)
+    }
+  }
+
   /* Пропорция без потолка: ищем блок, в котором есть aspect-ratio, и
      смотрим, есть ли в нём же ограничение высоты. */
   for (const m of css.matchAll(/aspect-ratio:/g)) {
@@ -791,6 +822,7 @@ const NAMES = {
   zIndex: 'z-index числом: имя из --layer-* или верхний слой (<dialog>, popover)',
   focusGone: 'кольцо фокуса снято и не заменено — клавиатура теряет место',
   noPress: 'есть :hover, нет отклика на нажатие — на телефоне контрол молчит',
+  stickyCap: 'приклеенное без потолка от окна: колонка выше ноутбука, низ не увидеть',
 }
 
 /* `--list [семья]` печатает сами находки. Без него долг видно числом, но

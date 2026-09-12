@@ -9,5 +9,6 @@
   "inlinePx": 0,
   "zIndex": 0,
   "focusGone": 0,
-  "noPress": 0
+  "noPress": 0,
+  "stickyCap": 0
 }

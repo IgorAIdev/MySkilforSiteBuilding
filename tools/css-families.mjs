@@ -20,7 +20,7 @@
 export const CSS_FAMILIES = [
   'fontPx', 'spacingPx', 'breakpoint', 'ratioNoCap',
   'halfRole', 'nearStep', 'motion', 'inlinePx',
-  'zIndex', 'focusGone', 'noPress',
+  'zIndex', 'focusGone', 'noPress', 'stickyCap',
 ]
 
 /** Пустая база: ноль по каждой семье. На новом проекте долга нет, и первое
