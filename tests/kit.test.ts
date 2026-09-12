@@ -64,8 +64,8 @@ test('ритм объявлен ступенями, а не числами на 
   }
 })
 
-test('пять примитивов раскладки на месте', () => {
-  for (const name of ['stack', 'cluster', 'switcher', 'rail', 'prose']) {
+test('примитивы раскладки на месте', () => {
+  for (const name of ['stack', 'cluster', 'switcher', 'rail', 'prose', 'lede', 'pinned']) {
     assert.ok(new RegExp(`^\\.${name}\\b`, 'm').test(primitives), `нет примитива ${name}`)
   }
 })
