@@ -110,6 +110,10 @@ const DARK_WIDTHS = [390, 1200]
    пальцу. */
 const COARSE_WIDTHS = [768, 1024]
 const BASELINE = new URL('./craft-baseline.json', import.meta.url).pathname
+/* Низкое окно, в котором меряется приклеенное: ноутбук 1366×768 за вычетом
+   полосы браузера. Обычный замер идёт в 900 по высоте, и колонка, которая в
+   900 помещается, на ноутбуке уходит за край — так и было с галереей товара. */
+const SHORT_H = 657
 const ROOT = new URL('..', import.meta.url).pathname
 
 /** Что меряется в самой странице. Одной функцией, потому что она уезжает
@@ -118,7 +122,7 @@ const measure = (phone) => {
   const out = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
                 weight: [], jump: [], name: [], heads: [], dress: [], clip: [],
                 swipe: [], stretch: [], broken: [], spill: [], focus: [], wrap: [],
-                anchor: [], dark: [] }
+                anchor: [], outline: [], marker: [], dark: [], ladder: [], wideCtrl: [], lopsided: [] }
   const seen = new Set()
 
   const lum = (c) => {
@@ -304,13 +308,15 @@ const measure = (phone) => {
        число, и длину каждой В ЗНАКАХ, а не в пикселях. Прикидка «полкегля
        на знак» тоже врала: у жирного наборного знак шире. */
     if (box.height / lh < 1.6) continue
+    const CAP = 400
+    let capped = false
     const rows = []
     {
       const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
       let node, chars = 0
       const r = document.createRange()
       let last = null, row = ''
-      while ((node = walk.nextNode()) && chars < 400) {
+      while ((node = walk.nextNode()) && chars < CAP) {
         for (let i = 0; i < node.length; i++, chars++) {
           r.setStart(node, i); r.setEnd(node, i + 1)
           const rect = r.getBoundingClientRect()
@@ -321,7 +327,13 @@ const measure = (phone) => {
         }
       }
       rows.push(row)
+      capped = chars >= CAP
     }
+    /* Обход остановился на потолке — последняя строка недописана, и в
+       среднее она не идёт. Делить ДЛИНУ ВСЕГО текста на число пройденных
+       строк нельзя: у абзаца в 520 знаков это давало 88 при настоящих 62 —
+       ложное «длинно» на оговорке подвала. */
+    if (capped) rows.pop()
     const lines = rows.filter((x) => x.trim()).length
     if (lines < 2) continue                     // одна строка меры не имеет
     const head = /^H[1-4]$/.test(el.tagName)
@@ -373,7 +385,7 @@ const measure = (phone) => {
        шириной 200px сорока пяти знаков не бывает физически. Это решение
        раскладки, а не меры, и ругаться на него здесь не о чем. */
     if (box.width < 320) continue
-    const chars = el.textContent.trim().length / lines
+    const chars = rows.reduce((n, x) => n + x.trim().length, 0) / lines
     /* Нижняя граница — про бегущий текст, а не про короткую фразу. Заметка
        под заголовком в две строки по сорок знаков не рубленая колонка, она
        просто короткая: делить нечего, и мера тут ни при чём. Поэтому снизу
@@ -662,6 +674,162 @@ const measure = (phone) => {
     const lvl = Number(h.tagName[1])
     if (prev && lvl > prev + 1) out.heads.push(`${name(h)} — h${prev} → h${lvl}`)
     prev = lvl
+  }
+
+  /* Лестница заголовков — не только уровнями, но и РАЗМЕРОМ.
+   *
+   * Семья `heads` выше проверяет номера: один h1, уровни без пропусков. Этого
+   * оказалось мало. Заказчик открыл страницу товара на десктопе и сказал, что
+   * «не гармонично»: имя товара стояло 36.9px, а заголовок раздела ниже по
+   * странице — 34px. Разница в восемь процентов, то есть главному слову
+   * страницы нечем быть главнее. Разметка при этом была безупречна: h1 один,
+   * пропусков нет.
+   *
+   * Причина — две верхние ступени шкалы меряют РАЗНЫМИ линейками: заголовок
+   * страницы считает свою колонку (`cqi`), заголовок раздела — ширину окна
+   * (`vw`). Пересекаются такие кривые в точке, которой нет ни в одном
+   * медиазапросе, и рассуждением её не найти. Там же нашлась вторая: ступень
+   * `--fs-h3` (26 на телефоне) была КРУПНЕЕ ступени `--h2-size` (24) на всех
+   * ширинах ниже 770px.
+   *
+   * Поэтому меряется отрисованный размер: заголовок каждого уровня обязан
+   * быть крупнее любого заголовка уровнем ниже. Сравниваются САМЫЕ КРУПНЫЕ
+   * представители уровня — на странице законно стоят разные h2 (заголовок
+   * полки и подпись блока), и меньший из них ни о чём не говорит.
+   *
+   * Служебные заголовки, убранные с экрана обрезкой, в счёт не идут: они есть
+   * для скринридера, размера у них нет. */
+  const painted = (el) => {
+    if (!spoken(el)) return false
+    const b = el.getBoundingClientRect()
+    return b.width > 4 && b.height > 4
+  }
+  const big = new Map()
+  for (const h of hs) {
+    if (!painted(h)) continue
+    const lvl = Number(h.tagName[1])
+    const fs = parseFloat(getComputedStyle(h).fontSize) || 0
+    const was = big.get(lvl)
+    if (!was || fs > was.fs) big.set(lvl, { fs, el: h })
+  }
+  const levels = [...big.keys()].sort((a, b) => a - b)
+  for (let i = 0; i < levels.length - 1; i++) {
+    const up = big.get(levels[i]), down = big.get(levels[i + 1])
+    if (down.fs >= up.fs) {
+      out.ladder.push(
+        `h${levels[i]} «${name(up.el)}» ${Math.round(up.fs)}px — ` +
+        `не крупнее h${levels[i + 1]} «${name(down.el)}» ${Math.round(down.fs)}px`)
+    }
+  }
+
+  /* И второе про размер: у страницы одно главное слово.
+   *
+   * Цена на карте товара стояла ровно того же размера и того же веса, что имя
+   * товара (37px / 700 оба) — потому что обе брали одну ступень `--fs-page`.
+   * Два главных на одной странице значат, что главного нет: глазу негде
+   * остановиться первым, и заказчик увидел это раньше любой проверки.
+   *
+   * Признак меряется так: жирный текст (600 и выше) не бывает крупнее
+   * заголовка страницы и не совпадает с ним размером. Нежирный не считается —
+   * крупная светлая цифра заголовку не соперник. */
+  const h1 = big.get(1)
+  if (h1) {
+    for (const el of document.querySelectorAll('b,strong,span,div,p,i,em,a,button')) {
+      if (!painted(el)) continue
+      const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())
+      if (!own) continue
+      const cs = getComputedStyle(el)
+      const fs = parseFloat(cs.fontSize) || 0
+      if ((parseInt(cs.fontWeight, 10) || 400) < 600) continue
+      if (fs < h1.fs) continue
+      const key = `shout:${name(el)}:${Math.round(fs)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.ladder.push(`«${name(el)}» ${Math.round(fs)}px жирным — не тише заголовка страницы (${Math.round(h1.fs)}px)`)
+    }
+  }
+
+  /* Орган во всю ширину — это орган без меры.
+   *
+   * Заказчик показал снимок и сказал прямо: «ну что это блять за кнопки на
+   * более чем половину экрана». Замер: «Add to cart» шла 588px при окне 1280,
+   * 748 при 1440 и 828 при 1840 — то есть кнопка росла вместе с окном, потому
+   * что колонка, в которой она стоит, не имела потолка.
+   *
+   * Дефекта не видно ни в одном файле: кнопка объявлена `width:100%`, и это
+   * верно — она обязана занимать свою коробку целиком. Неверна коробка, а её
+   * ширина приходит из раскладки.
+   *
+   * Порог — 640px: верхний конец меры набора (55–62ch при 18px даёт 605–680).
+   * Орган шире строки текста читается не как кнопка, а как полоса. Вторым
+   * условием половина окна: на узком десктопе 600px это уже полоса.
+   *
+   * Высокое в счёт не идёт: карточка товара — тоже ссылка, и ей во всю
+   * колонку стоять положено. Орган от карточки отличает высота. */
+  if (!phone && innerWidth >= 1080) {
+    const cap = Math.min(640, innerWidth / 2)
+    for (const el of document.querySelectorAll('button, a, [role="button"], input[type="submit"]')) {
+      if (!shown(el)) continue
+      const b = el.getBoundingClientRect()
+      if (b.height > 96 || b.height < 28 || b.width <= cap) continue
+      const cs = getComputedStyle(el)
+      const painted = alpha(cs.backgroundColor) > 0.05 || cs.boxShadow !== 'none'
+        || cs.borderTopWidth !== '0px'
+      if (!painted) continue
+      const key = `wide:${name(el)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.wideCtrl.push(`«${name(el)}» ${Math.round(b.width)}px при пороге ${Math.round(cap)}`)
+    }
+  }
+
+  /* Рваная правая кромка внутри одной колонки — это «симметрии нет вообще».
+   *
+   * Слова заказчика о карте товара: «тут блять жмётся всё влево», «симметрии
+   * вертикальной нет вообще», «ну что это блять за кнопки на более чем
+   * половину экрана». Причина у всех трёх одна: колонка покупки росла без
+   * предела (632 → 792 → 872 при окне 1280 → 1440 → 1840), а текст внутри
+   * обрывался на своей мере — 605. Панель фактов и коробка покупки тянулись
+   * на все 872, абзац — нет, и в одной колонке оказалось ДВЕ правых кромки.
+   *
+   * Мерится именно это: у соседей по колонке одна правая вертикаль. Не
+   * пропорция колонок (рельса фильтров рядом с сеткой и должна быть вдвое
+   * уже — это замысел) и не доля текста (проза со своей мерой внутри широкой
+   * колонки — тоже замысел). Разъехавшиеся кромки замыслом не бывают.
+   *
+   * Считаются только настоящие блоки-соседи: от 40% ширины колонки, иначе в
+   * счёт пошли бы пилюля и значок, которым полная ширина и не положена.
+   * Порог расхождения — 12% ширины колонки: меньше глаз принимает за поле. */
+  if (!phone && innerWidth >= 1080) {
+    for (const box of document.querySelectorAll('div, section, main, article')) {
+      const cs = getComputedStyle(box)
+      if (!/flex|grid/.test(cs.display)) continue
+      for (const col of box.children) {
+        const cb = col.getBoundingClientRect()
+        if (!shown(col) || cb.width < 320 || cb.height < 320) continue
+        if (/grid/.test(getComputedStyle(col).display)) continue
+        const edges = []
+        for (const kid of col.children) {
+          const k = kid.getBoundingClientRect()
+          if (!shown(kid) || k.width < cb.width * 0.4) continue
+          if (getComputedStyle(kid).display === 'inline') continue
+          /* Знак магазина, значок и короткая подпись колонку и не должны
+             заполнять: у них своя ширина, и кромка тут ни при чём. В счёт
+             идут только блоки с набором — от шестидесяти знаков. */
+          if ((kid.textContent || '').trim().length < 60) continue
+          edges.push(k.right)
+        }
+        if (edges.length < 2) continue
+        const spread = Math.max(...edges) - Math.min(...edges)
+        if (spread <= cb.width * 0.12) continue
+        const key = `ragged:${name(col) || col.className}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.lopsided.push(
+          `в колонке ${Math.round(cb.width)}px правые кромки соседей ` +
+          `разъехались на ${Math.round(spread)}px — одна вертикаль превратилась в две`)
+      }
+    }
   }
 
   /* Одно действие — одна одежда.
@@ -1009,6 +1177,59 @@ const measure = (phone) => {
     }
   }
 
+  /* Маркеры у списка, который не список. `<ol>` крошек, `<ul>` меню, ряд
+     плиток — все они списки по разметке (и правильно: скринридер считает
+     пункты), но ни один не набирается «1. 2. 3.» и точками. Браузер же
+     ставит маркер каждому `display:list-item`, если ему не сказали иначе —
+     и цепочка крошек вышла на витрину с «1.» перед домом, а «2.» и «3.»
+     легли поверх соседних слов: маркер рисуется СНАРУЖИ своей плитки.
+     Заказчик увидел это глазом. Меряется по первому пункту: маркер есть,
+     когда пункт остался `list-item` и тип маркера не `none`. Список
+     внутри навигации, шапки, подвала или выстроенный в ряд (flex/grid) —
+     не набор пунктов, и маркеров у него не бывает. Список в тексте статьи
+     остаётся списком: его здесь не трогают. */
+  for (const list of document.querySelectorAll('ol, ul')) {
+    if (!shown(list)) continue
+    const li = list.querySelector(':scope > li')
+    if (!li) continue
+    const lcs = getComputedStyle(li)
+    if (lcs.display !== 'list-item' || lcs.listStyleType === 'none') continue
+    const laid = /flex|grid/.test(getComputedStyle(list).display)
+    const chrome = list.closest('nav, header, footer')
+    if (!laid && !chrome) continue
+    const key = `marker:${name(list)}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.marker.push(`${name(list)} — маркеры «${lcs.listStyleType}» у ${laid ? 'ряда' : 'навигации'}: список без list-style:none`)
+  }
+
+  /* Контур поверх силуэта. Путь, у которого разом и заливка, и обводка, —
+     это правило обводки, написанное под прежний, линейный набор знаков и
+     пережившее его: силуэт получает свой же контур в полтора пикселя,
+     самолётик Telegram становится кляксой, трубка WhatsApp — двойной.
+     Дважды за проект, оба раза глазом заказчика: ряд соцсетей, потом
+     колонка контактов. Меряется ВЫЧИСЛЕННЫЙ стиль, а не атрибут: `stroke`
+     хозяина перебивает `stroke="none"` на самом знаке. Ловится и обратное —
+     линейный знак, которому хозяин забыл снять заливку: путь без своей
+     заливки чёрный по умолчанию, и обводка ложится на чёрное пятно.
+
+     Обводка, объявленная АТРИБУТОМ на самом пути или на его `svg`, —
+     намеренная: так нарисована черта под знаком сайта (`stroke` на пути
+     без площади). Дефект — обводка, пришедшая из стиля хозяина. */
+  for (const el of document.querySelectorAll('svg :is(path,circle,rect,ellipse,polygon)')) {
+    const cs = getComputedStyle(el)
+    if (cs.fill === 'none' || cs.stroke === 'none' || !(parseFloat(cs.strokeWidth) > 0)) continue
+    const svg = el.closest('svg')
+    if (!svg || !shown(svg)) continue
+    if (el.hasAttribute('stroke') || svg.hasAttribute('stroke')) continue
+    const host = svg.parentElement || svg
+    const label = svg.getAttribute('aria-label') || 'знак'
+    const key = `outline:${name(host)}:${label}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.outline.push(`${name(host)} — ${label}: заливка и обводка на одном пути`)
+  }
+
   return out
 }
 
@@ -1038,7 +1259,8 @@ let page = await desk.newPage()
 const found = { placeholder: [], measure: [], target: [], contrast: [], collision: [],
                 weight: [], jump: [], name: [], heads: [], dress: [], clip: [],
                 swipe: [], stretch: [], broken: [], spill: [], focus: [], wrap: [],
-                anchor: [], theme: [], coarse: [], calm: [] }
+                anchor: [], outline: [], marker: [], sticky: [], theme: [], coarse: [], calm: [],
+                ladder: [], wideCtrl: [], lopsided: [] }
 
 /** Открыть страницу на ширине и померить.
  *
@@ -1110,6 +1332,40 @@ async function visit(path, w, { finger, dark = false }) {
       process.exit(1)
     }
     const r = await page.evaluate(measure, phone)
+
+    /* ── приклеенное — в НИЗКОМ окне ───────────────────────────────────────
+       Приклеенный блок выше окна нельзя увидеть целиком никогда: его низ
+       показывается только когда кончится то, вдоль чего он едет. Галерея
+       товара — квадрат с плитками — на ноутбуке уходила за край, и до плиток
+       было не докрутиться, пока не кончится описание. Заказчик: «изображение
+       и дополнительные не помещаются в экран — это же основная информация».
+       Обычный замер идёт в 900 по высоте, где всё помещается; поэтому окно
+       здесь на время сжимается до ноутбучного и возвращается назад — второй
+       проход по дну снимает страницу по координатам окна и ждёт прежних 900.
+       Только в светлой теме: от темы высота не зависит. */
+    if (!dark) {
+      await page.setViewportSize({ width: w, height: SHORT_H })
+      r.sticky = await page.evaluate(() => {
+        const out = []
+        const name = (el) => {
+          const cls = (el.className || '').toString().split(/\s+/)[0] || ''
+          const txt = (el.textContent || '').trim().slice(0, 24)
+          return `${el.tagName.toLowerCase()}${cls ? '.' + cls.split('__').pop() : ''}${txt ? ` «${txt}»` : ''}`
+        }
+        for (const el of document.querySelectorAll('body *')) {
+          const cs = getComputedStyle(el)
+          if (cs.position !== 'sticky') continue
+          const b = el.getBoundingClientRect()
+          if (!b.height || cs.display === 'none') continue
+          const top = parseFloat(cs.top) || 0
+          if (top + b.height > innerHeight + 1) {
+            out.push(`${name(el)} — ${Math.round(b.height)}px при верхе ${Math.round(top)}: в окне ${innerHeight} приклеенное не помещается`)
+          }
+        }
+        return out
+      })
+      await page.setViewportSize({ width: w, height: 900 })
+    }
 
     /* ── второй проход: дно, которое не прочитать стилями ──────────────────
        Подпись на фотографии лежит на вуали, вуаль задана градиентом, то есть
@@ -1338,9 +1594,15 @@ const NAMES = {
   focus: 'фокус не виден ничем — клавиатура теряет место',
   wrap: 'подпись контрола сложилась в две строки',
   anchor: 'ссылка внутрь страницы: цели нет или цель уедет под шапку',
+  outline: 'контур поверх силуэта: заливка и обводка на одном пути',
+  marker: 'маркеры списка у навигации или ряда — «1.» и точки на витрине',
+  sticky: 'приклеенный блок выше окна ноутбука — низ не увидеть никогда',
   theme: 'контраст ниже порога в ТЁМНОЙ теме',
   coarse: 'цель нажатия меньше 44 при пальце на широком окне (планшет)',
   calm: 'движение осталось при системной настройке «поменьше движения»',
+  ladder: 'размер заголовков не по лестнице: уровень ниже крупнее верхнего, или жирное спорит с h1',
+  wideCtrl: 'орган шире меры строки (кнопка в полэкрана) — у колонки нет потолка',
+  lopsided: 'рваная правая кромка: у соседей по колонке разные правые вертикали',
 }
 
 /* `--list <семья>` печатает найденное целиком, не трогая базу: чинить проще,
